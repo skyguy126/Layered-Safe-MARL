@@ -1,0 +1,270 @@
+{
+    "os": "Linux-6.8.0-51-generic-x86_64-with-glibc2.35",
+    "python": "3.11.11",
+    "heartbeatAt": "2025-01-28T06:33:15.622851",
+    "startedAt": "2025-01-28T06:33:15.148523",
+    "docker": null,
+    "cuda": null,
+    "args": [
+        "--use_valuenorm",
+        "--use_popart",
+        "--project_name",
+        "di_env_random_safety_0",
+        "--model_dir=trained_models/250126_094919_di_for_warmstart",
+        "--env_name",
+        "GraphMPE",
+        "--algorithm_name",
+        "rmappo",
+        "--seed",
+        "0",
+        "--experiment_name",
+        "jingqi_250127_223313_agent4_landmark2_eplength250_world4",
+        "--scenario_name",
+        "navigation_graph_safe",
+        "--dynamics_type",
+        "double_integrator",
+        "--num_agents=4",
+        "--num_landmarks=2",
+        "--n_training_threads",
+        "1",
+        "--n_rollout_threads",
+        "8",
+        "--num_mini_batch",
+        "1",
+        "--episode_length",
+        "250",
+        "--num_env_steps",
+        "5000000",
+        "--ppo_epoch",
+        "10",
+        "--use_ReLU",
+        "--gain",
+        "0.01",
+        "--lr",
+        "7e-4",
+        "--critic_lr",
+        "7e-4",
+        "--user_name",
+        "ucb_mit_marl",
+        "--use_cent_obs",
+        "False",
+        "--graph_feat_type",
+        "relative",
+        "--use_dones",
+        "False",
+        "--collaborative",
+        "False",
+        "--num_walls",
+        "0",
+        "--world_size=4",
+        "--auto_mini_batch_size",
+        "--target_mini_batch_size",
+        "4096",
+        "--use_safety_filter",
+        "False",
+        "--soft_filter_type",
+        "none",
+        "--num_internal_step",
+        "1",
+        "--use_masking",
+        "True",
+        "--checkpoint_interval",
+        "50"
+    ],
+    "state": "running",
+    "program": "/mnt/2312dd0d-0348-41b0-8596-b79a2cc21f6b/github/Safe-MARL/onpolicy/scripts/train_mpe.py",
+    "codePath": "onpolicy/scripts/train_mpe.py",
+    "git": {
+        "remote": "https://github.com/Jaroan/Safe-MARL.git",
+        "commit": "d0f3b8dfbafed401828db0709f920969ef7fdd45"
+    },
+    "email": "james.jingqi.li@gmail.com",
+    "root": "/mnt/2312dd0d-0348-41b0-8596-b79a2cc21f6b/github/Safe-MARL",
+    "host": "asus-rog-098",
+    "username": "jingqili",
+    "executable": "/home/jingqili/miniconda3/envs/safemarl/bin/python",
+    "cpu_count": 24,
+    "cpu_count_logical": 32,
+    "cpu_freq": {
+        "current": 1051.54815625,
+        "min": 800.0,
+        "max": 4937.5
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 2000.0,
+            "min": 800.0,
+            "max": 5500.0
+        },
+        {
+            "current": 800.0,
+            "min": 800.0,
+            "max": 5500.0
+        },
+        {
+            "current": 800.0,
+            "min": 800.0,
+            "max": 5500.0
+        },
+        {
+            "current": 1166.033,
+            "min": 800.0,
+            "max": 5500.0
+        },
+        {
+            "current": 1100.0,
+            "min": 800.0,
+            "max": 5500.0
+        },
+        {
+            "current": 800.0,
+            "min": 800.0,
+            "max": 5500.0
+        },
+        {
+            "current": 1729.37,
+            "min": 800.0,
+            "max": 5500.0
+        },
+        {
+            "current": 800.0,
+            "min": 800.0,
+            "max": 5500.0
+        },
+        {
+            "current": 800.0,
+            "min": 800.0,
+            "max": 5800.0
+        },
+        {
+            "current": 800.0,
+            "min": 800.0,
+            "max": 5800.0
+        },
+        {
+            "current": 800.0,
+            "min": 800.0,
+            "max": 5800.0
+        },
+        {
+            "current": 800.0,
+            "min": 800.0,
+            "max": 5800.0
+        },
+        {
+            "current": 800.0,
+            "min": 800.0,
+            "max": 5500.0
+        },
+        {
+            "current": 800.0,
+            "min": 800.0,
+            "max": 5500.0
+        },
+        {
+            "current": 1187.243,
+            "min": 800.0,
+            "max": 5500.0
+        },
+        {
+            "current": 800.0,
+            "min": 800.0,
+            "max": 5500.0
+        },
+        {
+            "current": 800.0,
+            "min": 800.0,
+            "max": 4300.0
+        },
+        {
+            "current": 799.175,
+            "min": 800.0,
+            "max": 4300.0
+        },
+        {
+            "current": 800.0,
+            "min": 800.0,
+            "max": 4300.0
+        },
+        {
+            "current": 800.0,
+            "min": 800.0,
+            "max": 4300.0
+        },
+        {
+            "current": 800.0,
+            "min": 800.0,
+            "max": 4300.0
+        },
+        {
+            "current": 800.0,
+            "min": 800.0,
+            "max": 4300.0
+        },
+        {
+            "current": 800.0,
+            "min": 800.0,
+            "max": 4300.0
+        },
+        {
+            "current": 796.41,
+            "min": 800.0,
+            "max": 4300.0
+        },
+        {
+            "current": 884.601,
+            "min": 800.0,
+            "max": 4300.0
+        },
+        {
+            "current": 802.29,
+            "min": 800.0,
+            "max": 4300.0
+        },
+        {
+            "current": 800.0,
+            "min": 800.0,
+            "max": 4300.0
+        },
+        {
+            "current": 800.0,
+            "min": 800.0,
+            "max": 4300.0
+        },
+        {
+            "current": 800.0,
+            "min": 800.0,
+            "max": 4300.0
+        },
+        {
+            "current": 800.0,
+            "min": 800.0,
+            "max": 4300.0
+        },
+        {
+            "current": 952.861,
+            "min": 800.0,
+            "max": 4300.0
+        },
+        {
+            "current": 800.0,
+            "min": 800.0,
+            "max": 4300.0
+        }
+    ],
+    "disk": {
+        "total": 237.4032974243164,
+        "used": 215.36177825927734
+    },
+    "gpu": "NVIDIA GeForce RTX 4080",
+    "gpu_count": 1,
+    "gpu_devices": [
+        {
+            "name": "NVIDIA GeForce RTX 4080",
+            "memory_total": 17171480576
+        }
+    ],
+    "memory": {
+        "total": 125.53456497192383
+    }
+}
