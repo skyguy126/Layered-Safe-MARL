@@ -52,6 +52,10 @@ class DoubleIntegratorConfig():
     # separation distance used to evaluate the engagement distance.
     ENGAGEMENT_DISTANCE_REFERENCE_SEPARATION_DISTANCE = 0.5
 
+    # add terms to introduce uncertanity into the safety filter
+    SAFETY_VALUE_NOISE_STD = 0.03
+    SAFETY_VALUE_NOISE_BIAS = 0.01
+
     DT = 0.1
     DISTANCE_TO_GOAL_THRESHOLD = 0.3 # m
     GOAL_HEADING_THRESHOLD = np.pi/4

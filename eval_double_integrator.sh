@@ -12,7 +12,7 @@ config_file="multiagent/config.py"
 original_string=$(tail -n 1 $config_file)
 model_dir_str="trained_models/${experiment_name_str}"
 
-num_eval_episodes=3
+num_eval_episodes=10
 num_eval_agents=4
 eval_episode_length=250
 echo "Running ${num_eval_episodes} episodes with ${num_eval_agents} agents and episode length ${eval_episode_length}."
