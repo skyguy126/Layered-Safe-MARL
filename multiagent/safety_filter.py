@@ -325,7 +325,7 @@ class DoubleIntegratorSafetyHandle(SafetyFilterIndividualHandle):
         self.cbf_rate = DoubleIntegratorConfig.CBF_RATE # function to generaliz
         self.num_relative_state = 4
 
-        # initialize uncertanity parameters
+        # initialize uncertanity parameters (TODO: delete)
         self.safety_value_lcb_margin = DoubleIntegratorConfig.SAFETY_VALUE_NOISE_STD
         self.safety_value_lcb_extra_margin = DoubleIntegratorConfig.SAFETY_VALUE_NOISE_BIAS
 
@@ -336,21 +336,75 @@ class DoubleIntegratorSafetyHandle(SafetyFilterIndividualHandle):
         # Start with rho = 0.0 as default.
         self.safety_state_uncertainty_radius = DoubleIntegratorConfig.SAFETY_STATE_UNCERTAINTY_RADIUS
 
-    def apply_value_uncertainty(self, value: float) -> float:
+        # Estimate L_B from the precomputed HJ/CBVF gradient table.
+        self.lipschitz_bound_B = self.estimate_lipschitz_bound()
+    
+    def estimate_lipschitz_bound(self) -> float:
+        """
+        Estimate a global Lipschitz bound L_B from the HJ/CBVF gradient table.
+
+        For a differentiable value function B(s), a conservative finite-grid
+        approximation is:
+
+            L_B ~=~ max_s ||del(B(s))||
+
+        This tells us how much the value can change per unit state error.
+        """
+        grads = np.asarray(self.hj_data_handle.grads_hj)
+
+        # Common layout: grid_shape + (state_dim,)
+        if grads.shape[-1] == self.num_relative_state:
+            grad_vectors = grads.reshape(-1, self.num_relative_state)
+
+        # Fallback layout: (state_dim,) + grid_shape
+        elif grads.shape[0] == self.num_relative_state:
+            grad_vectors = np.moveaxis(grads, 0, -1).reshape(-1, self.num_relative_state)
+
+        else:
+            print(
+                f"Warning: unexpected HJ gradient shape {grads.shape}; "
+                "using L_B = 1.0."
+            )
+            return 1.0
+
+        grad_norms = np.linalg.norm(grad_vectors, axis=1)
+        grad_norms = grad_norms[np.isfinite(grad_norms)]
+
+        if grad_norms.size == 0:
+            print("Warning: no finite HJ gradient norms found; using L_B = 1.0.")
+            return 1.0
+
+        return float(np.max(grad_norms))
+
+    def apply_value_uncertainty(self, value: float, rho: float = None) -> float:
         """
         Conservative lower-confidence-bound style value adjustment.
 
-        Subtract a deterministic uncertainty margin:
+        The paper-style form is:
 
-            B_LCB = B_nominal - margin
+            B_LCB = B_nominal - L_B * rho
 
-        This makes the safety filter activate earlier under uncertainty.
+        where:
+            L_B = Lipschitz bound of the HJ/CBVF value function
+            rho = state uncertainty radius
+
+        We also keep a direct value margin for easy ablations.
         """
         if not np.isfinite(value):
             return value
 
-        margin = self.safety_value_lcb_margin + self.safety_value_lcb_extra_margin
-        return value - margin
+        if rho is None:
+            rho = self.safety_state_uncertainty_radius
+
+        rho = max(0.0, float(rho))
+
+        direct_value_margin = (
+            self.safety_value_lcb_margin
+            + self.safety_value_lcb_extra_margin
+        )
+        lcb_state_margin = self.lipschitz_bound_B * rho
+
+        return value - direct_value_margin - lcb_state_margin
 
     def clip_ctrl_with_valid_control_bound(self, state, u_sol):
         """ note that clipping is applied to each vehicle state and control input
