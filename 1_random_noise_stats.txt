@@ -1,0 +1,23 @@
+Evaluation Summary: Safety Value Noise Ablation
+
+Setup:
+- Environment: GraphMPE navigation_graph_safe
+- Dynamics: double_integrator
+- Number of agents: 4
+- Number of landmarks: 2
+- Episode length: 250
+- Render episodes: 3
+- Safety filter: enabled
+- Model: trained_models/double_integrator_safety_informed
+
+Average results over 3 episodes:
+
+| Noise Std | Noise Bias | Travel Time | Travel Distance | Done % | Goals Reached | Conflict % | Mean Min Distance | Worst Min Distance | Multiple Engagement % |
+|----------:|-----------:|------------:|----------------:|-------:|--------------:|-----------:|------------------:|-------------------:|----------------------:|
+| 0.00      | 0.00       | 13.48       | 5.25            | 100.0% | 2.00          | 0.0%       | 1.148             | 0.966              | 4.61%                 |
+| 0.03      | 0.00       | 18.63       | 6.47            | 66.7%  | 1.58          | 0.0%       | 0.900             | 0.837              | 11.97%                |
+| 0.03      | 0.01       | 15.62       | 5.48            | 91.7%  | 1.83          | 0.0%       | 0.951             | 0.865              | 5.18%                 |
+| 0.06      | 0.00       | 18.14       | 6.79            | 83.3%  | 1.67          | 0.0%       | 0.869             | 0.775              | 5.22%                 |
+| 0.06      | 0.01       | 17.53       | 6.54            | 75.0%  | 1.67          | 0.0%       | 0.896             | 0.819              | 3.41%                 |
+
+The no-noise baseline performs best overall, with the shortest travel time, shortest travel distance, 100% completion, and the largest safety margin. Adding safety-value noise generally degrades task performance: agents take longer paths, complete fewer goals, and maintain smaller minimum distances. However, the safety filter still appears robust in the sense that conflict percentage remains 0% across all noise settings. The biased-noise cases sometimes recover performance compared to zero-bias noise, especially at std=0.03, but the overall trend is that uncertainty in the safety value reduces efficiency and goal completion while preserving collision avoidance in these short evaluations.

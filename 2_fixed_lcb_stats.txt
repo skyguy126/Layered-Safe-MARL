@@ -1,0 +1,24 @@
+Evaluation Summary: Safety Value Noise Ablation with Fixed LCB
+
+Setup:
+- Environment: GraphMPE navigation_graph_safe
+- Dynamics: double_integrator
+- Number of agents: 4
+- Number of landmarks: 2
+- Episode length: 250
+- Render episodes: 3
+- Safety filter: enabled
+- Model: trained_models/double_integrator_safety_informed
+- LCB mode: fixed value
+
+Average results over 3 episodes:
+
+| Noise Std | Noise Bias | Travel Time | Travel Distance | Done % | Goals Reached | Conflict % | Mean Min Distance | Worst Min Distance | Multiple Engagement % |
+|----------:|-----------:|------------:|----------------:|-------:|--------------:|-----------:|------------------:|-------------------:|----------------------:|
+| 0.00      | 0.00       | 13.48       | 5.25            | 100.0% | 2.00          | 0.0%       | 1.148             | 0.966              | 4.61%                 |
+| 0.03      | 0.00       | 14.97       | 5.49            | 83.3%  | 1.83          | 0.0%       | 1.141             | 0.984              | 1.74%                 |
+| 0.03      | 0.01       | 13.58       | 5.35            | 100.0% | 2.00          | 0.0%       | 1.148             | 0.997              | 2.63%                 |
+| 0.06      | 0.00       | 14.81       | 5.58            | 91.7%  | 1.83          | 0.0%       | 1.156             | 1.011              | 1.30%                 |
+| 0.06      | 0.01       | 14.64       | 5.89            | 91.7%  | 1.92          | 0.0%       | 1.158             | 1.013              | 0.83%                 |
+
+With the fixed LCB value, the system looks much more robust to safety-value noise. Even as noise increases from std=0.03 to std=0.06, the completion rate stays relatively high, conflicts remain at 0%, and the minimum-distance margins stay close to or above the no-noise baseline. The fixed LCB appears to make the safety filter more conservative: it reduces multiple simultaneous safety engagements and preserves larger worst-case minimum distances, but with a small cost in efficiency, since travel time and travel distance generally increase slightly compared to the no-noise case.

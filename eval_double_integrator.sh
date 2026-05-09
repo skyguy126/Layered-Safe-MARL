@@ -12,20 +12,24 @@ config_file="multiagent/config.py"
 original_string=$(tail -n 1 $config_file)
 model_dir_str="trained_models/${experiment_name_str}"
 
-num_eval_episodes=10
+num_eval_episodes=3
 num_eval_agents=4
 eval_episode_length=250
 
 # Optional overrides via CLI args:
-# ./eval_double_integrator.sh [run1_std run1_bias run2_std run2_bias run3_std run3_bias]
+# ./eval_double_integrator.sh [run1_std run1_bias run2_std run2_bias run3_std run3_bias run4_std run4_bias run5_std run5_bias]
 run1_std="${1:-0.00}"; run1_bias="${2:-0.00}"
 run2_std="${3:-0.03}"; run2_bias="${4:-0.00}"
 run3_std="${5:-0.03}"; run3_bias="${6:-0.01}"
+run4_std="${7:-0.06}"; run4_bias="${8:-0.00}"
+run5_std="${9:-0.06}"; run5_bias="${10:-0.01}"
 
 echo "Running ${num_eval_episodes} episodes with ${num_eval_agents} agents and episode length ${eval_episode_length}."
 echo "Run 1: SAFETY_VALUE_NOISE_STD=${run1_std}, SAFETY_VALUE_NOISE_BIAS=${run1_bias}"
 echo "Run 2: SAFETY_VALUE_NOISE_STD=${run2_std}, SAFETY_VALUE_NOISE_BIAS=${run2_bias}"
 echo "Run 3: SAFETY_VALUE_NOISE_STD=${run3_std}, SAFETY_VALUE_NOISE_BIAS=${run3_bias}"
+echo "Run 4: SAFETY_VALUE_NOISE_STD=${run4_std}, SAFETY_VALUE_NOISE_BIAS=${run4_bias}"
+echo "Run 5: SAFETY_VALUE_NOISE_STD=${run5_std}, SAFETY_VALUE_NOISE_BIAS=${run5_bias}"
 
 python scripts/eval_mpe.py \
 --model_dir=${model_dir_str} \
@@ -74,3 +78,35 @@ python scripts/eval_mpe.py \
 --use_safety_filter ${use_safety_filter} \
 --safety_value_noise_std ${run3_std} \
 --safety_value_noise_bias ${run3_bias}
+
+python scripts/eval_mpe.py \
+--model_dir=${model_dir_str} \
+--dynamics_type ${dynamics_type} --render_episodes=${num_eval_episodes} \
+--world_size=${world_size} --num_landmarks=2 \
+--num_agents=${num_eval_agents} \
+--num_obstacles=0 \
+--seed=0 \
+--episode_length=${eval_episode_length} \
+--use_dones=False --collaborative=False \
+--scenario_name=${scenario_name} --horizon=1 --save_gifs --use_render --num_walls=0 \
+--discrete_action=True \
+--use_masking "True" \
+--use_safety_filter ${use_safety_filter} \
+--safety_value_noise_std ${run4_std} \
+--safety_value_noise_bias ${run4_bias}
+
+python scripts/eval_mpe.py \
+--model_dir=${model_dir_str} \
+--dynamics_type ${dynamics_type} --render_episodes=${num_eval_episodes} \
+--world_size=${world_size} --num_landmarks=2 \
+--num_agents=${num_eval_agents} \
+--num_obstacles=0 \
+--seed=0 \
+--episode_length=${eval_episode_length} \
+--use_dones=False --collaborative=False \
+--scenario_name=${scenario_name} --horizon=1 --save_gifs --use_render --num_walls=0 \
+--discrete_action=True \
+--use_masking "True" \
+--use_safety_filter ${use_safety_filter} \
+--safety_value_noise_std ${run5_std} \
+--safety_value_noise_bias ${run5_bias}

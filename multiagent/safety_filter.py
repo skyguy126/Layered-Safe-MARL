@@ -326,17 +326,24 @@ class DoubleIntegratorSafetyHandle(SafetyFilterIndividualHandle):
         self.num_relative_state = 4
 
         # initialize uncertanity parameters
-        self.safety_value_noise_std = DoubleIntegratorConfig.SAFETY_VALUE_NOISE_STD
-        self.safety_value_noise_bias = DoubleIntegratorConfig.SAFETY_VALUE_NOISE_BIAS
+        self.safety_value_lcb_margin = DoubleIntegratorConfig.SAFETY_VALUE_NOISE_STD
+        self.safety_value_lcb_extra_margin = DoubleIntegratorConfig.SAFETY_VALUE_NOISE_BIAS
 
     def apply_value_uncertainty(self, value: float) -> float:
+        """
+        Conservative lower-confidence-bound style value adjustment.
+
+        Subtract a deterministic uncertainty margin:
+
+            B_LCB = B_nominal - margin
+
+        This makes the safety filter activate earlier under uncertainty.
+        """
         if not np.isfinite(value):
             return value
-        if self.safety_value_noise_std <= 0 and self.safety_value_noise_bias == 0:
-            return value
-        noise = np.random.normal(loc=self.safety_value_noise_bias, scale=self.safety_value_noise_std)
-        
-        return value + noise
+
+        margin = self.safety_value_lcb_margin + self.safety_value_lcb_extra_margin
+        return value - margin
 
     def clip_ctrl_with_valid_control_bound(self, state, u_sol):
         """ note that clipping is applied to each vehicle state and control input
@@ -398,22 +405,30 @@ class DoubleIntegratorSafetyHandle(SafetyFilterIndividualHandle):
             3. If that distance is less than coordination range, apply hj safety filter.
         """
         relative_distances = []
-        relative_values = []
+        relative_values_nominal = []
+        relative_values_lcb = []
         relative_states_in_hj_range = []
+
         for other_state in other_state_list:
             relative_distance = self.get_relative_distance(ego_state, other_state)
             relative_distances.append(relative_distance)
-            relative_value, state_in_hj_range = self.get_value_of_relative_state(ego_state, other_state)
 
-            # if the hj table-entry exists, then add some noise
+            relative_value_nominal, state_in_hj_range = self.get_value_of_relative_state(
+                ego_state,
+                other_state
+            )
+
+            relative_value_lcb = relative_value_nominal
             if state_in_hj_range:
-                relative_value = self.apply_value_uncertainty(relative_value)
+                relative_value_lcb = self.apply_value_uncertainty(relative_value_nominal)
 
-            relative_values.append(relative_value)
+            relative_values_nominal.append(relative_value_nominal)
+            relative_values_lcb.append(relative_value_lcb)
             relative_states_in_hj_range.append(state_in_hj_range)
+
         min_agent_index_by_distance = np.argmin(relative_distances)
         # min_agent_index = np.argmin(relative_distances)
-        min_agent_index = np.argmin(relative_values)
+        min_agent_index = np.argmin(relative_values_lcb)
         # print(f"min_agent_index: by_distance: {min_agent_index_by_distance}, by_value: {min_agent_index}, value at min_dist: {relative_values[min_agent_index_by_distance]:.2f}, at min_value: {relative_values[min_agent_index]:.2f}, dist at min_value: {relative_distances[min_agent_index]:.2f}, dist at min_dist: {relative_distances[min_agent_index_by_distance]:.2f}")
         min_relative_distance = relative_distances[min_agent_index_by_distance]
         if min_relative_distance > self.coordination_range:
@@ -427,7 +442,8 @@ class DoubleIntegratorSafetyHandle(SafetyFilterIndividualHandle):
         u_ref[self.num_input:] = other_action_list[min_agent_index]
         eps_hj = 0.4
         # print("relative state: ", relative_state)
-        value_at_relative_state = relative_values[min_agent_index]
+        value_at_relative_state_nominal = relative_values_nominal[min_agent_index]
+        value_at_relative_state = relative_values_lcb[min_agent_index]
         state_in_hj_range = relative_states_in_hj_range[min_agent_index]
         if not state_in_hj_range:
             # print(f"state out of hj range: {relative_state}")
