@@ -1,0 +1,4 @@
+numpy==1.26.4
+jax==0.4.25
+jaxlib==0.4.25
+opencv-python==4.9.0.80
