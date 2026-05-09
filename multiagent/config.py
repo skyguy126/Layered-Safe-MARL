@@ -52,6 +52,9 @@ class DoubleIntegratorConfig():
     # separation distance used to evaluate the engagement distance.
     ENGAGEMENT_DISTANCE_REFERENCE_SEPARATION_DISTANCE = 0.5
 
+    # LCB-style state uncertainty radius rho (see DoubleIntegratorSafetyHandle)
+    SAFETY_STATE_UNCERTAINTY_RADIUS = 0.0
+
     DT = 0.1
     DISTANCE_TO_GOAL_THRESHOLD = 0.3 # m
     GOAL_HEADING_THRESHOLD = np.pi/4

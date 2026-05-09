@@ -247,7 +247,7 @@ class KinematicVehicleSafetyHandle(SafetyFilterIndividualHandle):
         # crude least-restrictive reachability control.
         # print(f"value: {value_at_relative_state:.2f}")
         if value_at_relative_state < eps_hj:
-            u = np.asarray(self.hj_dynamics.optimal_control(relative_state, None, grad_value=grad_at_relative_state)).copy()
+            u = np.asarray(self.hj_dynamics.optimal_control_and_disturbance(relative_state, None, grad_at_relative_state)[0]).copy()
         else:
             # use cbf constraint instead based on reachability value function.
             u = self.cbf_qp(relative_state, u_ref, value_at_relative_state, grad_at_relative_state)
@@ -325,6 +325,78 @@ class DoubleIntegratorSafetyHandle(SafetyFilterIndividualHandle):
         self.cbf_rate = DoubleIntegratorConfig.CBF_RATE # function to generaliz
         self.num_relative_state = 4
 
+        # LCB-style state uncertainty radius:
+        #
+        #     B_LCB = B_nominal - L_B * rho
+        #
+        # Start with rho = 0.0 as default.
+        self.safety_state_uncertainty_radius = DoubleIntegratorConfig.SAFETY_STATE_UNCERTAINTY_RADIUS
+
+        # Estimate L_B from the precomputed HJ/CBVF gradient table.
+        self.lipschitz_bound_B = self.estimate_lipschitz_bound()
+
+        print(
+            f"LCB safety filter: L_B={self.lipschitz_bound_B:.4f}, "
+            f"rho={self.safety_state_uncertainty_radius:.4f}, "
+            f"margin={self.lipschitz_bound_B * self.safety_state_uncertainty_radius:.4f}"
+        )
+    
+    def estimate_lipschitz_bound(self) -> float:
+        """
+        Estimate a global Lipschitz bound L_B from the HJ/CBVF gradient table.
+
+        For a differentiable value function B(s), a conservative finite-grid
+        approximation is:
+
+            L_B ~=~ max_s ||del(B(s))||
+
+        This tells us how much the value can change per unit state error.
+        """
+        grads = np.asarray(self.hj_data_handle.grads_hj)
+
+        # Common layout: grid_shape + (state_dim,)
+        if grads.shape[-1] == self.num_relative_state:
+            grad_vectors = grads.reshape(-1, self.num_relative_state)
+
+        # Fallback layout: (state_dim,) + grid_shape
+        elif grads.shape[0] == self.num_relative_state:
+            grad_vectors = np.moveaxis(grads, 0, -1).reshape(-1, self.num_relative_state)
+
+        else:
+            print(
+                f"Warning: unexpected HJ gradient shape {grads.shape}; "
+                "using L_B = 1.0."
+            )
+            return 1.0
+
+        grad_norms = np.linalg.norm(grad_vectors, axis=1)
+        grad_norms = grad_norms[np.isfinite(grad_norms)]
+
+        if grad_norms.size == 0:
+            print("Warning: no finite HJ gradient norms found; using L_B = 1.0.")
+            return 1.0
+
+        return float(np.max(grad_norms))
+
+    def apply_lcb_uncertainty(self, value: float, rho: float = None) -> float:
+        """
+        Apply the lower-confidence-bound correction:
+
+            B_LCB = B_nominal - L_B * rho
+
+        where rho is the relative-state uncertainty radius.
+        """
+        if not np.isfinite(value):
+            return value
+
+        if rho is None:
+            rho = self.safety_state_uncertainty_radius
+
+        rho = max(0.0, float(rho))
+        lcb_margin = self.lipschitz_bound_B * rho
+
+        return value - lcb_margin
+
     def clip_ctrl_with_valid_control_bound(self, state, u_sol):
         """ note that clipping is applied to each vehicle state and control input
         """
@@ -385,17 +457,30 @@ class DoubleIntegratorSafetyHandle(SafetyFilterIndividualHandle):
             3. If that distance is less than coordination range, apply hj safety filter.
         """
         relative_distances = []
-        relative_values = []
+        relative_values_nominal = []
+        relative_values_lcb = []
         relative_states_in_hj_range = []
+
         for other_state in other_state_list:
             relative_distance = self.get_relative_distance(ego_state, other_state)
             relative_distances.append(relative_distance)
-            relative_value, state_in_hj_range = self.get_value_of_relative_state(ego_state, other_state)
-            relative_values.append(relative_value)
+
+            relative_value_nominal, state_in_hj_range = self.get_value_of_relative_state(
+                ego_state,
+                other_state
+            )
+
+            relative_value_lcb = relative_value_nominal
+            if state_in_hj_range:
+                relative_value_lcb = self.apply_lcb_uncertainty(relative_value_nominal)
+
+            relative_values_nominal.append(relative_value_nominal)
+            relative_values_lcb.append(relative_value_lcb)
             relative_states_in_hj_range.append(state_in_hj_range)
+
         min_agent_index_by_distance = np.argmin(relative_distances)
         # min_agent_index = np.argmin(relative_distances)
-        min_agent_index = np.argmin(relative_values)
+        min_agent_index = np.argmin(relative_values_lcb)
         # print(f"min_agent_index: by_distance: {min_agent_index_by_distance}, by_value: {min_agent_index}, value at min_dist: {relative_values[min_agent_index_by_distance]:.2f}, at min_value: {relative_values[min_agent_index]:.2f}, dist at min_value: {relative_distances[min_agent_index]:.2f}, dist at min_dist: {relative_distances[min_agent_index_by_distance]:.2f}")
         min_relative_distance = relative_distances[min_agent_index_by_distance]
         if min_relative_distance > self.coordination_range:
@@ -409,7 +494,8 @@ class DoubleIntegratorSafetyHandle(SafetyFilterIndividualHandle):
         u_ref[self.num_input:] = other_action_list[min_agent_index]
         eps_hj = 0.4
         # print("relative state: ", relative_state)
-        value_at_relative_state = relative_values[min_agent_index]
+        value_at_relative_state_nominal = relative_values_nominal[min_agent_index]
+        value_at_relative_state = relative_values_lcb[min_agent_index]
         state_in_hj_range = relative_states_in_hj_range[min_agent_index]
         if not state_in_hj_range:
             # print(f"state out of hj range: {relative_state}")
@@ -420,7 +506,7 @@ class DoubleIntegratorSafetyHandle(SafetyFilterIndividualHandle):
         # crude least-restrictive reachability control.
         # print(f"value: {value_at_relative_state:.2f}")
         if value_at_relative_state < eps_hj:
-            u = np.asarray(self.hj_dynamics.optimal_control(relative_state, None, grad_value=grad_at_relative_state)).copy()
+            u = np.asarray(self.hj_dynamics.optimal_control_and_disturbance(relative_state, None, grad_at_relative_state)[0]).copy()
         else:
             # use cbf constraint instead based on reachability value function.
             u = self.cbf_qp(relative_state, u_ref, value_at_relative_state, grad_at_relative_state)
