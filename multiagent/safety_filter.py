@@ -247,7 +247,7 @@ class KinematicVehicleSafetyHandle(SafetyFilterIndividualHandle):
         # crude least-restrictive reachability control.
         # print(f"value: {value_at_relative_state:.2f}")
         if value_at_relative_state < eps_hj:
-            u = np.asarray(self.hj_dynamics.optimal_control(relative_state, None, grad_value=grad_at_relative_state)).copy()
+            u = np.asarray(self.hj_dynamics.optimal_control_and_disturbance(relative_state, None, grad_at_relative_state)[0]).copy()
         else:
             # use cbf constraint instead based on reachability value function.
             u = self.cbf_qp(relative_state, u_ref, value_at_relative_state, grad_at_relative_state)
@@ -420,7 +420,7 @@ class DoubleIntegratorSafetyHandle(SafetyFilterIndividualHandle):
         # crude least-restrictive reachability control.
         # print(f"value: {value_at_relative_state:.2f}")
         if value_at_relative_state < eps_hj:
-            u = np.asarray(self.hj_dynamics.optimal_control(relative_state, None, grad_value=grad_at_relative_state)).copy()
+            u = np.asarray(self.hj_dynamics.optimal_control_and_disturbance(relative_state, None, grad_at_relative_state)[0]).copy()
         else:
             # use cbf constraint instead based on reachability value function.
             u = self.cbf_qp(relative_state, u_ref, value_at_relative_state, grad_at_relative_state)
