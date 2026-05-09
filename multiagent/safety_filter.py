@@ -329,6 +329,13 @@ class DoubleIntegratorSafetyHandle(SafetyFilterIndividualHandle):
         self.safety_value_lcb_margin = DoubleIntegratorConfig.SAFETY_VALUE_NOISE_STD
         self.safety_value_lcb_extra_margin = DoubleIntegratorConfig.SAFETY_VALUE_NOISE_BIAS
 
+        # LCB-style state uncertainty radius:
+        #
+        #     B_LCB = B_nominal - L_B * rho
+        #
+        # Start with rho = 0.0 as default.
+        self.safety_state_uncertainty_radius = DoubleIntegratorConfig.SAFETY_STATE_UNCERTAINTY_RADIUS
+
     def apply_value_uncertainty(self, value: float) -> float:
         """
         Conservative lower-confidence-bound style value adjustment.

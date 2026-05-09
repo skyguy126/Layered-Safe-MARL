@@ -55,6 +55,8 @@ class DoubleIntegratorConfig():
     # add terms to introduce uncertanity into the safety filter
     SAFETY_VALUE_NOISE_STD = 0.03
     SAFETY_VALUE_NOISE_BIAS = 0.01
+    # LCB-style state uncertainty radius rho (see DoubleIntegratorSafetyHandle)
+    SAFETY_STATE_UNCERTAINTY_RADIUS = 0.0
 
     DT = 0.1
     DISTANCE_TO_GOAL_THRESHOLD = 0.3 # m

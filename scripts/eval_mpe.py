@@ -65,6 +65,8 @@ def parse_args(args, parser):
                         help="Override DoubleIntegrator safety value noise std.")
     parser.add_argument("--safety_value_noise_bias", type=float, default=None,
                         help="Override DoubleIntegrator safety value noise bias.")
+    parser.add_argument("--safety_state_uncertainty_radius", type=float, default=None,
+                        help="Override DoubleIntegrator safety state uncertainty radius (LCB rho).")
 
     all_args = parser.parse_known_args(args)[0]
 
@@ -115,6 +117,8 @@ def main(args):
         DoubleIntegratorConfig.SAFETY_VALUE_NOISE_STD = all_args.safety_value_noise_std
     if all_args.safety_value_noise_bias is not None:
         DoubleIntegratorConfig.SAFETY_VALUE_NOISE_BIAS = all_args.safety_value_noise_bias
+    if all_args.safety_state_uncertainty_radius is not None:
+        DoubleIntegratorConfig.SAFETY_STATE_UNCERTAINTY_RADIUS = all_args.safety_state_uncertainty_radius
 
     if all_args.algorithm_name == "rmappo" or all_args.algorithm_name == "rmappg":
         assert (
