@@ -61,10 +61,6 @@ def parse_args(args, parser):
                         default=False, help="Safety filter activated when true.")
     parser.add_argument("--dynamics_type", type=str, default=False, help="Agent's dynamics type: 'airtaxi', 'double_integrator'")
     parser.add_argument('--num_internal_step', type=int, default=1, help="number of internal steps for dynamics")
-    parser.add_argument("--safety_value_noise_std", type=float, default=None,
-                        help="Override DoubleIntegrator safety value noise std.")
-    parser.add_argument("--safety_value_noise_bias", type=float, default=None,
-                        help="Override DoubleIntegrator safety value noise bias.")
     parser.add_argument("--safety_state_uncertainty_radius", type=float, default=None,
                         help="Override DoubleIntegrator safety state uncertainty radius (LCB rho).")
 
@@ -113,10 +109,6 @@ def main(args):
     parser = get_config()
     all_args = parse_args(args, parser)
     all_args = modify_args(all_args.model_dir, all_args)
-    if all_args.safety_value_noise_std is not None:
-        DoubleIntegratorConfig.SAFETY_VALUE_NOISE_STD = all_args.safety_value_noise_std
-    if all_args.safety_value_noise_bias is not None:
-        DoubleIntegratorConfig.SAFETY_VALUE_NOISE_BIAS = all_args.safety_value_noise_bias
     if all_args.safety_state_uncertainty_radius is not None:
         DoubleIntegratorConfig.SAFETY_STATE_UNCERTAINTY_RADIUS = all_args.safety_state_uncertainty_radius
 

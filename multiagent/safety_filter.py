@@ -325,10 +325,6 @@ class DoubleIntegratorSafetyHandle(SafetyFilterIndividualHandle):
         self.cbf_rate = DoubleIntegratorConfig.CBF_RATE # function to generaliz
         self.num_relative_state = 4
 
-        # initialize uncertanity parameters (TODO: delete)
-        self.safety_value_lcb_margin = DoubleIntegratorConfig.SAFETY_VALUE_NOISE_STD
-        self.safety_value_lcb_extra_margin = DoubleIntegratorConfig.SAFETY_VALUE_NOISE_BIAS
-
         # LCB-style state uncertainty radius:
         #
         #     B_LCB = B_nominal - L_B * rho
@@ -338,6 +334,12 @@ class DoubleIntegratorSafetyHandle(SafetyFilterIndividualHandle):
 
         # Estimate L_B from the precomputed HJ/CBVF gradient table.
         self.lipschitz_bound_B = self.estimate_lipschitz_bound()
+
+        print(
+            f"LCB safety filter: L_B={self.lipschitz_bound_B:.4f}, "
+            f"rho={self.safety_state_uncertainty_radius:.4f}, "
+            f"margin={self.lipschitz_bound_B * self.safety_state_uncertainty_radius:.4f}"
+        )
     
     def estimate_lipschitz_bound(self) -> float:
         """
@@ -376,19 +378,13 @@ class DoubleIntegratorSafetyHandle(SafetyFilterIndividualHandle):
 
         return float(np.max(grad_norms))
 
-    def apply_value_uncertainty(self, value: float, rho: float = None) -> float:
+    def apply_lcb_uncertainty(self, value: float, rho: float = None) -> float:
         """
-        Conservative lower-confidence-bound style value adjustment.
-
-        The paper-style form is:
+        Apply the lower-confidence-bound correction:
 
             B_LCB = B_nominal - L_B * rho
 
-        where:
-            L_B = Lipschitz bound of the HJ/CBVF value function
-            rho = state uncertainty radius
-
-        We also keep a direct value margin for easy ablations.
+        where rho is the relative-state uncertainty radius.
         """
         if not np.isfinite(value):
             return value
@@ -397,14 +393,9 @@ class DoubleIntegratorSafetyHandle(SafetyFilterIndividualHandle):
             rho = self.safety_state_uncertainty_radius
 
         rho = max(0.0, float(rho))
+        lcb_margin = self.lipschitz_bound_B * rho
 
-        direct_value_margin = (
-            self.safety_value_lcb_margin
-            + self.safety_value_lcb_extra_margin
-        )
-        lcb_state_margin = self.lipschitz_bound_B * rho
-
-        return value - direct_value_margin - lcb_state_margin
+        return value - lcb_margin
 
     def clip_ctrl_with_valid_control_bound(self, state, u_sol):
         """ note that clipping is applied to each vehicle state and control input
@@ -481,7 +472,7 @@ class DoubleIntegratorSafetyHandle(SafetyFilterIndividualHandle):
 
             relative_value_lcb = relative_value_nominal
             if state_in_hj_range:
-                relative_value_lcb = self.apply_value_uncertainty(relative_value_nominal)
+                relative_value_lcb = self.apply_lcb_uncertainty(relative_value_nominal)
 
             relative_values_nominal.append(relative_value_nominal)
             relative_values_lcb.append(relative_value_lcb)
