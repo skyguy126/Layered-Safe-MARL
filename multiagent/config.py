@@ -83,4 +83,4 @@ class RewardBinaryConfig():
     DIFF_FROM_FILTERED_ACTION = False
     
 # supported types: "circular_config", "left_to_right_merge", "left_to_right_cross", "bottom_to_top_merge", "left_to_right_merge_and_land", "bottom_to_top_merge_and_land", "three_vehicle_conflicting_example"
-eval_scenario_type = "left_to_right_merge_and_land"
+eval_scenario_type = "bottom_to_top_merge_and_land"

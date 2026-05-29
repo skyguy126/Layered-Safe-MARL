@@ -254,6 +254,38 @@ def get_landmark_node_observation_relative_without_heading(landmark_position: np
 								np.array([entity_type])])
 	return node_obs
 
+def get_obstacle_node_observation_relative_without_heading(obstacle_position: np.ndarray,
+														reference_agent_state: BaseEntityState):
+	reference_position = reference_agent_state.p_pos
+	reference_velocity = reference_agent_state.p_vel
+	relative_obstacle_position = obstacle_position - reference_position
+	relative_obstacle_velocity = -reference_velocity
+	dummy_position_info = relative_obstacle_position
+	entity_type = entity_mapping['obstacle']
+	node_obs = np.concatenate([relative_obstacle_position,
+								relative_obstacle_velocity,
+								dummy_position_info,
+								np.array([0.0, 1.0]),
+								np.array([0.0]),
+								np.array([entity_type])])
+	return node_obs
+
+def get_obstacle_node_observation_relative_with_heading(obstacle_position: np.ndarray,
+														reference_agent_state: BaseEntityState):
+	reference_position = reference_agent_state.p_pos
+	reference_heading = reference_agent_state.theta
+	relative_obstacle_position = get_relative_position_from_reference(
+		obstacle_position, reference_position, reference_heading)
+	entity_type = entity_mapping['obstacle']
+	node_obs = np.concatenate([relative_obstacle_position,
+								np.array([reference_agent_state.speed]),
+								np.array([0.0, 1.0]),
+								relative_obstacle_position,
+								np.array([0.0, 1.0]),
+								np.array([0.0]),
+								np.array([entity_type])])
+	return node_obs
+
 def get_heading_aware_distance_penalty(relative_position) -> float:
 	"relative position: agent's positive relatively defined w.r.t. goal (goal heading considered)"
 	distance_to_goal = np.linalg.norm(relative_position)

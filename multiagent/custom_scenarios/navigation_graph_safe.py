@@ -984,6 +984,10 @@ class SafeAamScenario(BaseScenario):
 			landmark_order = i_landmark // self.num_agents
 			landmark_done = self.reached_goal[landmark_agent_id] > landmark_order
 			disconnected_mask.append(landmark_done)
+		for _ in world.obstacles:
+			disconnected_mask.append(False)
+		for _ in world.walls:
+			disconnected_mask.append(False)
 
 		adj[disconnected_mask, :] = 0   # Mask rows for done agents
 		adj[:, disconnected_mask] = 0   # Mask columns for done agents
@@ -1061,6 +1065,9 @@ class SafeAamScenario(BaseScenario):
 																	landmark_heading,
 																	landmark_speed,
 																	reference_agent_state)
+			elif 'obstacle' in entity.name:
+				return get_obstacle_node_observation_relative_with_heading(
+					entity.state.p_pos, reference_agent_state)
 			else:
 				raise ValueError(f'{entity.name} not supported')
 		elif agent.dynamics_type == EntityDynamicsType.DoubleIntegratorXY:
@@ -1083,6 +1090,9 @@ class SafeAamScenario(BaseScenario):
 																	landmark_heading,
 																	landmark_speed,
 																	reference_agent_state)
+			elif 'obstacle' in entity.name:
+				return get_obstacle_node_observation_relative_without_heading(
+					entity.state.p_pos, reference_agent_state)
 			else:
 				raise ValueError(f'{entity.name} not supported')
 		else:
