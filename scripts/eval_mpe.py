@@ -60,6 +60,13 @@ def parse_args(args, parser):
                         default=False, help="Safety filter activated when true.")
     parser.add_argument("--dynamics_type", type=str, default=False, help="Agent's dynamics type: 'airtaxi', 'double_integrator'")
     parser.add_argument('--num_internal_step', type=int, default=1, help="number of internal steps for dynamics")
+    parser.add_argument("--packet_loss_prob", type=float, default=0.0,
+                        help="Packet loss probability for neighbor-state communication.")
+    parser.add_argument("--vmax_uncertainty", type=float, default=1.0,
+                        help="Velocity bound used to map packet age to uncertainty radius.")
+    parser.add_argument("--enable_packet_uncertainty", type=lambda x: bool(strtobool(x)),
+                        default=False,
+                        help="If true, only neighbor observations use stale packet-based state.")
 
     all_args = parser.parse_known_args(args)[0]
 
@@ -72,7 +79,8 @@ def modify_args(model_dir:str,
                                 'seed', 'save_gifs', 'use_render', 'episode_length',
                                 'use_dones', 'collaborative', 
                                 'scenario_name',
-                                'num_walls','zero_shift', 'use_safety_filter']):
+                                'num_walls','zero_shift', 'use_safety_filter',
+                                'packet_loss_prob', 'vmax_uncertainty', 'enable_packet_uncertainty']):
     """
         Modify the args used to train the model
     """

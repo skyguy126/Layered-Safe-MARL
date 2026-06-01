@@ -209,6 +209,16 @@ class SafeAamScenario(BaseScenario):
 		num_scripted_agents_goals = self.num_scripted_agents
 		world.collaborative = args.collaborative
 		self.use_masking = args.use_masking
+		# Communication uncertainty settings used only for neighbor observations.
+		# This introduces an uncertainty problem instance without modifying policy,
+		# dynamics, CBVF, or safety filtering logic.
+		self.enable_packet_uncertainty = getattr(args, "enable_packet_uncertainty", False)
+		self.packet_loss_prob = getattr(args, "packet_loss_prob", 0.0)
+		self.vmax_uncertainty = getattr(args, "vmax_uncertainty", 1.0)
+		self.packet_loss_prob = float(np.clip(self.packet_loss_prob, 0.0, 1.0))
+		self.packet_dt = float(world.dt)
+		self.last_received_state = {}
+		self.packet_age = np.zeros((self.num_agents, self.num_agents), dtype=np.float32)
 		# add agents
 		global_id = 0
 		world.agents = [Agent(self.dynamics_type) for i in range(self.num_agents)]
@@ -315,6 +325,35 @@ class SafeAamScenario(BaseScenario):
 		self.random_scenario(world)
 		self.initialize_min_time_distance_graph(world)
 		self.initialize_landmarks_group_reached_goal(world)
+		self._initialize_packet_uncertainty_buffers(world)
+
+	def _initialize_packet_uncertainty_buffers(self, world:World) -> None:
+		self.last_received_state = {}
+		self.packet_age = np.zeros((self.num_agents, self.num_agents), dtype=np.float32)
+		for ego in world.agents:
+			self.last_received_state[ego.id] = {}
+			for neighbor in world.agents:
+				if ego.id == neighbor.id:
+					continue
+				self.last_received_state[ego.id][neighbor.id] = deepcopy(neighbor.state)
+		world.packet_age_matrix = self.packet_age.copy()
+		world.packet_age_mean = 0.0
+
+	def _get_observed_neighbor_state(self, ego_agent:Agent, neighbor_agent:Agent, world:World):
+		if (not self.enable_packet_uncertainty) or ego_agent.id == neighbor_agent.id:
+			return neighbor_agent.state
+
+		packet_received = np.random.rand() < (1.0 - self.packet_loss_prob)
+		if packet_received:
+			self.last_received_state[ego_agent.id][neighbor_agent.id] = deepcopy(neighbor_agent.state)
+			self.packet_age[ego_agent.id, neighbor_agent.id] = 0.0
+		else:
+			self.packet_age[ego_agent.id, neighbor_agent.id] += self.packet_dt
+
+		world.packet_age_matrix = self.packet_age.copy()
+		valid_ages = self.packet_age[~np.eye(self.num_agents, dtype=bool)]
+		world.packet_age_mean = float(np.mean(valid_ages)) if valid_ages.size > 0 else 0.0
+		return self.last_received_state[ego_agent.id][neighbor_agent.id]
 
 	def update_engagement_distance_based_on_separation_distance(self, separation_distance:float) -> float:
 		shift = separation_distance - self.engagement_distance_ref_separation_distance
@@ -1047,7 +1086,7 @@ class SafeAamScenario(BaseScenario):
 		reference_agent_state = agent.state
 		if agent.dynamics_type == EntityDynamicsType.KinematicVehicleXY or agent.dynamics_type == EntityDynamicsType.KinematicVehicleXY:
 			if 'agent' in entity.name:
-				agent_state = entity.state
+				agent_state = self._get_observed_neighbor_state(agent, entity, world)
 				agent_goal = self.get_agent_current_goal(entity, world)
 				agent_goal_position = agent_goal.state.p_pos
 				agent_goal_heading = agent_goal.heading
@@ -1072,7 +1111,7 @@ class SafeAamScenario(BaseScenario):
 				raise ValueError(f'{entity.name} not supported')
 		elif agent.dynamics_type == EntityDynamicsType.DoubleIntegratorXY:
 			if 'agent' in entity.name:
-				agent_state = entity.state
+				agent_state = self._get_observed_neighbor_state(agent, entity, world)
 				agent_goal = self.get_agent_current_goal(entity, world)
 				agent_goal_position = agent_goal.state.p_pos
 				agent_goal_heading = agent_goal.heading

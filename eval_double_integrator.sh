@@ -6,6 +6,9 @@ dynamics_type="double_integrator"
 # for custom scenario, use "navigation_graph_safe_eval" and check the last line of multiagent/config.py to see what custom scenario is used
 scenario_name="navigation_graph_safe_eval"
 use_safety_filter="True"
+enable_packet_uncertainty="True"
+packet_loss_prob=0.2
+vmax_uncertainty=1.0
 world_size=4
 # Read last line of config.py and echo
 config_file="multiagent/config.py"
@@ -29,4 +32,7 @@ python scripts/eval_mpe.py \
 --scenario_name=${scenario_name} --horizon=1 --save_gifs --use_render --num_walls=0 \
 --discrete_action=True \
 --use_masking "True" \
---use_safety_filter ${use_safety_filter}
+--use_safety_filter ${use_safety_filter} \
+--enable_packet_uncertainty ${enable_packet_uncertainty} \
+--packet_loss_prob ${packet_loss_prob} \
+--vmax_uncertainty ${vmax_uncertainty}

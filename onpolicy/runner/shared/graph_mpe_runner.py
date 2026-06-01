@@ -662,6 +662,12 @@ class GMPERunner(Runner):
 
 		dists_trav_list = np.zeros((self.num_agents))
 		time_taken_list = np.zeros((self.num_agents))
+		# This block intentionally introduces only packet-observation uncertainty.
+		# It does not add any robust correction term, LCB, or safety filter update.
+		episode_len = self.episode_length
+		num_eval_episodes = self.all_args.render_episodes
+		episode_has_collided_by_t_sum = np.zeros(episode_len, dtype=np.float64)
+		avg_packet_age_sum = np.zeros(episode_len, dtype=np.float64)
 
 		# Set up video writer
 		from multiagent.config import eval_scenario_type
@@ -741,6 +747,8 @@ class GMPERunner(Runner):
 			available_actions = np.ones((self.num_agents, self.envs.action_space[0].n), 
 										dtype=np.float32)
 			episode_rewards = []
+			episode_collision_indicator = np.zeros(episode_len, dtype=np.float32)
+			episode_has_collided_by_t = np.zeros(episode_len, dtype=np.float32)
 			
 			for step in range(self.episode_length):
 				calc_start = time.time()
@@ -809,6 +817,32 @@ class GMPERunner(Runner):
 
 					if 'min_relative_distance' in info:
 						min_distance_list[info['id']] = info['min_relative_distance']
+				true_positions = np.array(
+					[[agent_position_x_list[i], agent_position_y_list[i]] for i in range(self.num_agents)],
+					dtype=np.float32,
+				)
+				safety_radius = getattr(envs.envs[0].world, "separation_distance_target", 0.0)
+				has_collision_this_step = 0
+				for i in range(self.num_agents):
+					for j in range(i + 1, self.num_agents):
+						if np.linalg.norm(true_positions[i] - true_positions[j]) < safety_radius:
+							has_collision_this_step = 1
+							break
+					if has_collision_this_step:
+						break
+				episode_collision_indicator[step] = has_collision_this_step
+				if step == 0:
+					episode_has_collided_by_t[step] = has_collision_this_step
+				else:
+					episode_has_collided_by_t[step] = max(episode_has_collided_by_t[step - 1], has_collision_this_step)
+
+				packet_age_matrix = getattr(envs.envs[0].world, "packet_age_matrix", None)
+				if packet_age_matrix is not None:
+					valid_ages = packet_age_matrix[~np.eye(self.num_agents, dtype=bool)]
+					avg_packet_age_step = float(np.mean(valid_ages)) if valid_ages.size > 0 else 0.0
+				else:
+					avg_packet_age_step = 0.0
+				avg_packet_age_sum[step] += avg_packet_age_step
 				if step == 0:
 					position_headers = ["step"]
 					for i in range(self.num_agents):
@@ -900,6 +934,7 @@ class GMPERunner(Runner):
 			position_log_file.close()
 			safety_log_file.close()
 			min_distance_log_file.close()
+			episode_has_collided_by_t_sum += episode_has_collided_by_t
 
 			env_infos = self.process_infos(infos)
 
@@ -976,6 +1011,30 @@ class GMPERunner(Runner):
 		if not get_metrics and self.all_args.save_gifs:
 			video_writer.release()
 			print(f"Video saved to {file_path}")
+
+		cumulative_collision_pct = 100.0 * episode_has_collided_by_t_sum / max(num_eval_episodes, 1)
+		avg_packet_age = avg_packet_age_sum / max(num_eval_episodes, 1)
+		avg_uncertainty_radius = self.all_args.vmax_uncertainty * avg_packet_age
+		packet_metrics_file_name = str(self.gif_dir) + '/packet_uncertainty_metrics_' + scenario_name + '_num_agent' + str(self.all_args.num_agents) \
+						+ '_landmark' + str(self.all_args.num_landmarks) \
+						+ '_safety_' + str(self.all_args.use_safety_filter) \
+						+ '_world_size' + str(self.all_args.world_size) + '_seed' + str(self.all_args.seed) + '.csv'
+		with open(packet_metrics_file_name, mode='w', newline='', encoding='utf-8') as packet_metrics_file:
+			packet_metrics_writer = csv.DictWriter(
+				packet_metrics_file,
+				fieldnames=["timestep", "cumulative_collision_pct", "avg_packet_age", "avg_uncertainty_radius"],
+			)
+			packet_metrics_writer.writeheader()
+			for t in range(episode_len):
+				packet_metrics_writer.writerow(
+					{
+						"timestep": t,
+						"cumulative_collision_pct": cumulative_collision_pct[t],
+						"avg_packet_age": avg_packet_age[t],
+						"avg_uncertainty_radius": avg_uncertainty_radius[t],
+					}
+				)
+		print(f"Packet uncertainty metrics saved to {packet_metrics_file_name}")
 
 		print("Average Stats over Episodes:", average_stats)
 		eval_log_file.close()
