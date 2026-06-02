@@ -655,7 +655,6 @@ class GMPERunner(Runner):
 		"""
 		envs = self.envs
 		self.reset_number = 0
-		all_frames = []
 		total_dists_traveled, total_time_taken = [], []
 		rewards_arr, success_rates_arr, num_collisions_arr, frac_episode_arr = [], [], [],[]
 		dist_mean_arr, time_mean_arr = [],[]
@@ -715,6 +714,7 @@ class GMPERunner(Runner):
 		ep_info_list = []
 		accumulated_stats = defaultdict(float)
 		for episode in range(self.all_args.render_episodes):
+			episode_start = time.perf_counter()
 			position_log_file_name = str(self.gif_dir) + '/log_position_' + scenario_name + '_num_agent' + str(self.all_args.num_agents) \
 							+ '_landmark' + str(self.all_args.num_landmarks) \
 							+ '_safety_' + str(self.all_args.use_safety_filter) \
@@ -740,12 +740,8 @@ class GMPERunner(Runner):
 			min_distance_log_writer = None
 
 			# print("episode", episode)
-			if not get_metrics:
-				if self.all_args.save_gifs:
-					image = envs.render('rgb_array')[0][0]
-					all_frames.append(image)
-				else:
-					envs.render('human')
+			if not get_metrics and not self.all_args.save_gifs:
+				envs.render('human')
 
 			rnn_states = np.zeros((self.n_rollout_threads, 
 									self.num_agents, 
@@ -942,7 +938,6 @@ class GMPERunner(Runner):
 							_put_label(image, f"Vehicle Near Collision:  {num_agents_safety_violated} / {self.num_agents}", label_x_pos, label_y_pos + 4 * label_y_offset + 11, color=text_color)
 
 						video_writer.write(cv2.cvtColor(image, cv2.COLOR_RGB2BGR))  # Convert RGB to BGR for OpenCV
-						all_frames.append(image)
 						calc_end = time.time()
 						elapsed = calc_end - calc_start
 						if elapsed < self.all_args.ifi:
@@ -995,6 +990,11 @@ class GMPERunner(Runner):
 			# RESET HERE.
 			obs, agent_id, node_obs, adj, ep_info = envs.reset(num_total_episode-1)
 			# ep_info returns stat of the previous episode.
+			episode_elapsed = time.perf_counter() - episode_start
+			print(
+				f"Episode {episode + 1}/{self.all_args.render_episodes} "
+				f"elapsed wall time: {episode_elapsed:.2f}s"
+			)
 			print("Episode summary: ", ep_info)
 			ep_info_list.append(ep_info[0])
 			for key, value in ep_info[0].items():
