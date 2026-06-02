@@ -668,6 +668,9 @@ class GMPERunner(Runner):
 		num_eval_episodes = self.all_args.render_episodes
 		episode_has_collided_by_t_sum = np.zeros(episode_len, dtype=np.float64)
 		avg_packet_age_sum = np.zeros(episode_len, dtype=np.float64)
+		max_packet_age_overall = 0.0
+		packet_loss_count_total = 0
+		packet_transmission_count_total = 0
 
 		# Set up video writer
 		from multiagent.config import eval_scenario_type
@@ -840,9 +843,14 @@ class GMPERunner(Runner):
 				if packet_age_matrix is not None:
 					valid_ages = packet_age_matrix[~np.eye(self.num_agents, dtype=bool)]
 					avg_packet_age_step = float(np.mean(valid_ages)) if valid_ages.size > 0 else 0.0
+					max_packet_age_step = float(np.max(valid_ages)) if valid_ages.size > 0 else 0.0
+					max_packet_age_overall = max(max_packet_age_overall, max_packet_age_step)
 				else:
 					avg_packet_age_step = 0.0
 				avg_packet_age_sum[step] += avg_packet_age_step
+				world = envs.envs[0].world
+				packet_loss_count_total += getattr(world, "packet_loss_count_step", 0)
+				packet_transmission_count_total += getattr(world, "packet_transmission_count_step", 0)
 				if step == 0:
 					position_headers = ["step"]
 					for i in range(self.num_agents):
@@ -1015,6 +1023,13 @@ class GMPERunner(Runner):
 		cumulative_collision_pct = 100.0 * episode_has_collided_by_t_sum / max(num_eval_episodes, 1)
 		avg_packet_age = avg_packet_age_sum / max(num_eval_episodes, 1)
 		avg_uncertainty_radius = self.all_args.vmax_uncertainty * avg_packet_age
+		average_packet_age = float(np.mean(avg_packet_age))
+		measured_effective_packet_loss = (
+			packet_loss_count_total / max(packet_transmission_count_total, 1)
+		)
+		computed_burst_start_prob = getattr(
+			envs.envs[0].world, "burst_start_prob", self.all_args.packet_loss_prob
+		)
 		packet_metrics_file_name = str(self.gif_dir) + '/packet_uncertainty_metrics_' + scenario_name + '_num_agent' + str(self.all_args.num_agents) \
 						+ '_landmark' + str(self.all_args.num_landmarks) \
 						+ '_safety_' + str(self.all_args.use_safety_filter) \
@@ -1035,6 +1050,32 @@ class GMPERunner(Runner):
 					}
 				)
 		print(f"Packet uncertainty metrics saved to {packet_metrics_file_name}")
+
+		packet_eval_summary_file_name = str(self.gif_dir) + '/packet_uncertainty_eval_summary_' + scenario_name + '_num_agent' + str(self.all_args.num_agents) \
+						+ '_landmark' + str(self.all_args.num_landmarks) \
+						+ '_safety_' + str(self.all_args.use_safety_filter) \
+						+ '_world_size' + str(self.all_args.world_size) + '_seed' + str(self.all_args.seed) + '.csv'
+		packet_eval_summary = {
+			"packet_loss_prob": self.all_args.packet_loss_prob,
+			"packet_loss_burst_len": getattr(self.all_args, "packet_loss_burst_len", 1),
+			"computed_burst_start_prob": computed_burst_start_prob,
+			"measured_effective_packet_loss": measured_effective_packet_loss,
+			"average_packet_age": average_packet_age,
+			"max_packet_age": max_packet_age_overall,
+			"conflict_percentage": average_stats.get("conflict_percentage", 0.0),
+			"min_distance_mean": average_stats.get("min_distance_mean", 0.0),
+			"min_distance_min": min((ep_info.get("min_distance_min", np.inf) for ep_info in ep_info_list), default=0.0),
+			"done_percentage": average_stats.get("done_percentage", 0.0),
+			"multiple_engagement_percentage": average_stats.get("multiple_engagement_percentage", 0.0),
+		}
+		with open(packet_eval_summary_file_name, mode='w', newline='', encoding='utf-8') as packet_eval_summary_file:
+			packet_eval_summary_writer = csv.DictWriter(
+				packet_eval_summary_file,
+				fieldnames=list(packet_eval_summary.keys()),
+			)
+			packet_eval_summary_writer.writeheader()
+			packet_eval_summary_writer.writerow(packet_eval_summary)
+		print(f"Packet uncertainty eval summary saved to {packet_eval_summary_file_name}")
 
 		print("Average Stats over Episodes:", average_stats)
 		eval_log_file.close()

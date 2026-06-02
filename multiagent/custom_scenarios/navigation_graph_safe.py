@@ -210,15 +210,20 @@ class SafeAamScenario(BaseScenario):
 		world.collaborative = args.collaborative
 		self.use_masking = args.use_masking
 		# Communication uncertainty settings used only for neighbor observations.
-		# This introduces an uncertainty problem instance without modifying policy,
-		# dynamics, CBVF, or safety filtering logic.
+		# packet_loss_prob is the target long-run average packet loss rate;
+		# packet_loss_burst_len controls temporal correlation (burst length).
+		# packet_loss_burst_len = 1 recovers independent Bernoulli packet loss.
 		self.enable_packet_uncertainty = getattr(args, "enable_packet_uncertainty", False)
 		self.packet_loss_prob = getattr(args, "packet_loss_prob", 0.0)
 		self.vmax_uncertainty = getattr(args, "vmax_uncertainty", 1.0)
+		self.packet_loss_burst_len = max(1, int(getattr(args, "packet_loss_burst_len", 1)))
 		self.packet_loss_prob = float(np.clip(self.packet_loss_prob, 0.0, 1.0))
+		self.burst_start_prob = self._compute_burst_start_prob(
+			self.packet_loss_prob, self.packet_loss_burst_len)
 		self.packet_dt = float(world.dt)
 		self.last_received_state = {}
 		self.packet_age = np.zeros((self.num_agents, self.num_agents), dtype=np.float32)
+		self.remaining_burst_loss = np.zeros((self.num_agents, self.num_agents), dtype=np.int32)
 		# add agents
 		global_id = 0
 		world.agents = [Agent(self.dynamics_type) for i in range(self.num_agents)]
@@ -323,13 +328,14 @@ class SafeAamScenario(BaseScenario):
 		#####################################################
 		self.update_curriculum(world, num_current_episode)
 		self.random_scenario(world)
+		self._initialize_packet_uncertainty_buffers(world)
 		self.initialize_min_time_distance_graph(world)
 		self.initialize_landmarks_group_reached_goal(world)
-		self._initialize_packet_uncertainty_buffers(world)
 
 	def _initialize_packet_uncertainty_buffers(self, world:World) -> None:
 		self.last_received_state = {}
 		self.packet_age = np.zeros((self.num_agents, self.num_agents), dtype=np.float32)
+		self.remaining_burst_loss = np.zeros((self.num_agents, self.num_agents), dtype=np.int32)
 		for ego in world.agents:
 			self.last_received_state[ego.id] = {}
 			for neighbor in world.agents:
@@ -338,21 +344,68 @@ class SafeAamScenario(BaseScenario):
 				self.last_received_state[ego.id][neighbor.id] = deepcopy(neighbor.state)
 		world.packet_age_matrix = self.packet_age.copy()
 		world.packet_age_mean = 0.0
+		world.use_observed_neighbor_state_for_safety = False
+		world.observed_neighbor_state_values = {}
+		world.burst_start_prob = self.burst_start_prob
+		world.packet_loss_count_step = 0
+		world.packet_transmission_count_step = 0
 
-	def _get_observed_neighbor_state(self, ego_agent:Agent, neighbor_agent:Agent, world:World):
-		if (not self.enable_packet_uncertainty) or ego_agent.id == neighbor_agent.id:
-			return neighbor_agent.state
+	def _compute_burst_start_prob(self, p_loss: float, burst_len: int) -> float:
+		if burst_len == 1:
+			return p_loss
+		denom = burst_len - p_loss * (burst_len - 1)
+		if denom <= 0:
+			return 1.0
+		return float(np.clip(p_loss / denom, 0.0, 1.0))
 
-		packet_received = np.random.rand() < (1.0 - self.packet_loss_prob)
-		if packet_received:
-			self.last_received_state[ego_agent.id][neighbor_agent.id] = deepcopy(neighbor_agent.state)
-			self.packet_age[ego_agent.id, neighbor_agent.id] = 0.0
-		else:
-			self.packet_age[ego_agent.id, neighbor_agent.id] += self.packet_dt
+	def _update_packet_uncertainty(self, world:World) -> None:
+		if not self.enable_packet_uncertainty:
+			world.use_observed_neighbor_state_for_safety = False
+			world.observed_neighbor_state_values = {}
+			world.packet_loss_count_step = 0
+			world.packet_transmission_count_step = 0
+			return
+
+		world.use_observed_neighbor_state_for_safety = True
+		world.observed_neighbor_state_values = {}
+		world.packet_loss_count_step = 0
+		world.packet_transmission_count_step = 0
+		for ego in world.agents:
+			world.observed_neighbor_state_values[ego.id] = {}
+			for neighbor in world.agents:
+				if ego.id == neighbor.id:
+					continue
+				i, j = ego.id, neighbor.id
+				world.packet_transmission_count_step += 1
+				if self.remaining_burst_loss[i, j] > 0:
+					packet_received = False
+					self.remaining_burst_loss[i, j] -= 1
+				else:
+					u = np.random.uniform(0.0, 1.0)
+					if u < self.burst_start_prob:
+						packet_received = False
+						self.remaining_burst_loss[i, j] = self.packet_loss_burst_len - 1
+					else:
+						packet_received = True
+
+				if not packet_received:
+					world.packet_loss_count_step += 1
+
+				if packet_received:
+					self.last_received_state[i][j] = deepcopy(neighbor.state)
+					self.packet_age[i, j] = 0.0
+				else:
+					self.packet_age[i, j] += self.packet_dt
+
+				world.observed_neighbor_state_values[i][j] = self.last_received_state[i][j].values.copy()
 
 		world.packet_age_matrix = self.packet_age.copy()
 		valid_ages = self.packet_age[~np.eye(self.num_agents, dtype=bool)]
 		world.packet_age_mean = float(np.mean(valid_ages)) if valid_ages.size > 0 else 0.0
+
+	def _get_observed_neighbor_state(self, ego_agent:Agent, neighbor_agent:Agent, world:World):
+		if (not self.enable_packet_uncertainty) or ego_agent.id == neighbor_agent.id:
+			return neighbor_agent.state
 		return self.last_received_state[ego_agent.id][neighbor_agent.id]
 
 	def update_engagement_distance_based_on_separation_distance(self, separation_distance:float) -> float:
@@ -1042,6 +1095,7 @@ class SafeAamScenario(BaseScenario):
 			Nodes are entities in the environment
 			Edges are constructed by thresholding distances
 		"""
+		self._update_packet_uncertainty(world)
 		dists = world.cached_dist_mag
 		# just connect the ones which are within connection 
 		# distance and do not connect to itself

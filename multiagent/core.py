@@ -728,10 +728,15 @@ class World(object):
     def get_other_agent_state_list(self, agent:Agent):
         state_list = []
         index_list = []
+        use_observed = getattr(self, 'use_observed_neighbor_state_for_safety', False)
+        observed_states = getattr(self, 'observed_neighbor_state_values', None)
         for (i_other, other_agent) in enumerate(self.agents):
             if other_agent == agent or other_agent.done or not other_agent.departed:
                 continue
-            state_list.append(other_agent.state.values)
+            if use_observed and observed_states is not None:
+                state_list.append(observed_states[agent.id][i_other])
+            else:
+                state_list.append(other_agent.state.values)
             index_list.append(i_other)
         return state_list, index_list
 
