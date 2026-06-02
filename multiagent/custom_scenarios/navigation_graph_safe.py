@@ -190,10 +190,36 @@ class SafeAamScenario(BaseScenario):
 			self.separation_distance_init = self.separation_distance_target
 		self.separation_distance = self.separation_distance_init
 		self.update_engagement_distance_based_on_separation_distance(self.separation_distance)
+		# Communication uncertainty settings used only for neighbor observations.
+		# packet_loss_prob is the target long-run average packet loss rate;
+		# packet_loss_burst_len controls temporal correlation (burst length).
+		# packet_loss_burst_len = 1 recovers independent Bernoulli packet loss.
+		self.enable_packet_uncertainty = getattr(args, "enable_packet_uncertainty", False)
+		self.packet_loss_prob = getattr(args, "packet_loss_prob", 0.0)
+		self.vmax_uncertainty = getattr(args, "vmax_uncertainty", 1.0)
+		self.packet_loss_burst_len = max(1, int(getattr(args, "packet_loss_burst_len", 1)))
+		self.warmup_steps = max(0, int(getattr(args, "warmup_steps", 0)))
+		self.safety_filter_uncertainty_mode = getattr(args, "safety_filter_uncertainty_mode", "nominal")
+		self.fixed_lcb_margin = float(getattr(args, "fixed_lcb_margin", 0.0))
+		self.lcb_lipschitz_const = float(getattr(args, "lcb_lipschitz_const", 1.0))
+		self.packet_loss_prob = float(np.clip(self.packet_loss_prob, 0.0, 1.0))
+		self.burst_start_prob = self._compute_burst_start_prob(
+			self.packet_loss_prob, self.packet_loss_burst_len)
 
 
 		use_hj_handle = self.use_safety_filter or RewardBinaryConfig.HJ_VALUE
-		world = World(dynamics_type=self.dynamics_type, use_safety_filter=self.use_safety_filter, use_hj_handle=use_hj_handle, num_internal_step=args.num_internal_step, separation_distance=self.separation_distance, separation_distance_target=self.separation_distance_target)
+		world = World(
+			dynamics_type=self.dynamics_type,
+			use_safety_filter=self.use_safety_filter,
+			use_hj_handle=use_hj_handle,
+			num_internal_step=args.num_internal_step,
+			separation_distance=self.separation_distance,
+			separation_distance_target=self.separation_distance_target,
+			safety_filter_uncertainty_mode=self.safety_filter_uncertainty_mode,
+			fixed_lcb_margin=self.fixed_lcb_margin,
+			lcb_lipschitz_const=self.lcb_lipschitz_const,
+			vmax_uncertainty=self.vmax_uncertainty,
+		)
 		# graph related attributes
 		world.graph_mode = True
 		world.graph_feat_type = args.graph_feat_type
@@ -209,18 +235,6 @@ class SafeAamScenario(BaseScenario):
 		num_scripted_agents_goals = self.num_scripted_agents
 		world.collaborative = args.collaborative
 		self.use_masking = args.use_masking
-		# Communication uncertainty settings used only for neighbor observations.
-		# packet_loss_prob is the target long-run average packet loss rate;
-		# packet_loss_burst_len controls temporal correlation (burst length).
-		# packet_loss_burst_len = 1 recovers independent Bernoulli packet loss.
-		self.enable_packet_uncertainty = getattr(args, "enable_packet_uncertainty", False)
-		self.packet_loss_prob = getattr(args, "packet_loss_prob", 0.0)
-		self.vmax_uncertainty = getattr(args, "vmax_uncertainty", 1.0)
-		self.packet_loss_burst_len = max(1, int(getattr(args, "packet_loss_burst_len", 1)))
-		self.warmup_steps = max(0, int(getattr(args, "warmup_steps", 0)))
-		self.packet_loss_prob = float(np.clip(self.packet_loss_prob, 0.0, 1.0))
-		self.burst_start_prob = self._compute_burst_start_prob(
-			self.packet_loss_prob, self.packet_loss_burst_len)
 		self.packet_dt = float(world.dt)
 		self.last_received_state = {}
 		self.packet_age = np.zeros((self.num_agents, self.num_agents), dtype=np.float32)

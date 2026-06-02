@@ -38,6 +38,9 @@ packet_loss_prob=0.1 # this is good
 vmax_uncertainty=1.0
 packet_loss_burst_len=20 # can also be 5 for more realistic results
 warmup_steps=25
+safety_filter_uncertainty_mode="lipschitz_lcb" # nominal | fixed_lcb | lipschitz_lcb
+fixed_lcb_margin=0.0
+lcb_lipschitz_const=1.0
 
 # --- Rendering (set flag to empty string to disable) ---
 save_gif_flag="--save_gifs"
@@ -72,5 +75,8 @@ python scripts/eval_mpe.py \
   --vmax_uncertainty="${vmax_uncertainty}" \
   --packet_loss_burst_len="${packet_loss_burst_len}" \
   --warmup_steps="${warmup_steps}" \
+  --safety_filter_uncertainty_mode="${safety_filter_uncertainty_mode}" \
+  --fixed_lcb_margin="${fixed_lcb_margin}" \
+  --lcb_lipschitz_const="${lcb_lipschitz_const}" \
   ${save_gif_flag} \
   ${use_render_flag}

@@ -71,6 +71,13 @@ def parse_args(args, parser):
                         help="If true, only neighbor observations use stale packet-based state.")
     parser.add_argument("--warmup_steps", type=int, default=0,
                         help="Timesteps after reset with perfect neighbor communication before packet loss.")
+    parser.add_argument("--safety_filter_uncertainty_mode", type=str, default="nominal",
+                        choices=["nominal", "fixed_lcb", "lipschitz_lcb"],
+                        help="How safety filter value is adjusted under communication uncertainty.")
+    parser.add_argument("--fixed_lcb_margin", type=float, default=0.0,
+                        help="Constant margin subtracted from nominal safety value in fixed_lcb mode.")
+    parser.add_argument("--lcb_lipschitz_const", type=float, default=1.0,
+                        help="Lipschitz constant L_B used in lipschitz_lcb mode.")
 
     all_args = parser.parse_known_args(args)[0]
 
@@ -86,7 +93,8 @@ def modify_args(model_dir:str,
                                 'num_walls','zero_shift', 'use_safety_filter',
                                 'packet_loss_prob', 'packet_loss_burst_len',
                                 'vmax_uncertainty', 'enable_packet_uncertainty',
-                                'warmup_steps']):
+                                'warmup_steps', 'safety_filter_uncertainty_mode',
+                                'fixed_lcb_margin', 'lcb_lipschitz_const']):
     """
         Modify the args used to train the model
     """

@@ -358,7 +358,11 @@ class Agent(Entity):
 class World(object):
     def __init__(self, dynamics_type: EntityDynamicsType, use_safety_filter: bool=False,  
                  use_hj_handle: bool=False,
-                 num_internal_step=1, separation_distance=None, separation_distance_target=None):
+                 num_internal_step=1, separation_distance=None, separation_distance_target=None,
+                 safety_filter_uncertainty_mode: str = "nominal",
+                 fixed_lcb_margin: float = 0.0,
+                 lcb_lipschitz_const: float = 1.0,
+                 vmax_uncertainty: float = 1.0):
 
         assert dynamics_type in EntityDynamicsType, "Invalid dynamics type"
         self.dynamics_type = dynamics_type
@@ -424,6 +428,14 @@ class World(object):
         self.separation_distance = separation_distance
         self.separation_distance_target = separation_distance_target
         self.engagement_distance = self.config_class.ENGAGEMENT_DISTANCE
+        self.safety_filter_uncertainty_mode = safety_filter_uncertainty_mode
+        self.fixed_lcb_margin = fixed_lcb_margin
+        self.lcb_lipschitz_const = lcb_lipschitz_const
+        self.vmax_uncertainty = vmax_uncertainty
+        self.safety_filter_rho_mean_step = 0.0
+        self.safety_filter_rho_max_step = 0.0
+        self.safety_filter_lcb_margin_mean_step = 0.0
+        self.safety_filter_lcb_margin_max_step = 0.0
             
         self.agent_safety_handle_list = []
         self.hj_data_handle = self._init_hj_handle(self.dynamics_type, self.separation_distance) if use_hj_handle else None
@@ -474,9 +486,26 @@ class World(object):
             # Initialize safety handles for agents
             for _ in self.agents:
                 if self.dynamics_type == EntityDynamicsType.DoubleIntegratorXY:
-                    self.agent_safety_handle_list.append(DoubleIntegratorSafetyHandle(self.hj_data_handle))
+                    self.agent_safety_handle_list.append(
+                        DoubleIntegratorSafetyHandle(
+                            self.hj_data_handle,
+                            safety_filter_uncertainty_mode=self.safety_filter_uncertainty_mode,
+                            fixed_lcb_margin=self.fixed_lcb_margin,
+                            lcb_lipschitz_const=self.lcb_lipschitz_const,
+                            vmax_uncertainty=self.vmax_uncertainty,
+                        )
+                    )
                 elif self.dynamics_type == EntityDynamicsType.KinematicVehicleXY:
-                    self.agent_safety_handle_list.append(KinematicVehicleSafetyHandle(AirTaxiConfig, self.hj_data_handle))
+                    self.agent_safety_handle_list.append(
+                        KinematicVehicleSafetyHandle(
+                            AirTaxiConfig,
+                            self.hj_data_handle,
+                            safety_filter_uncertainty_mode=self.safety_filter_uncertainty_mode,
+                            fixed_lcb_margin=self.fixed_lcb_margin,
+                            lcb_lipschitz_const=self.lcb_lipschitz_const,
+                            vmax_uncertainty=self.vmax_uncertainty,
+                        )
+                    )
                 else:
                     raise NotImplementedError("Dynamics type not implemented for safety handle initialization")
 
@@ -651,6 +680,8 @@ class World(object):
         safe_action_list = []
         filtered_flag_list = []
         deconflicting_agent_index_list = []
+        rho_values = []
+        lcb_margin_values = []
         for i, agent in enumerate(self.agents):
             if agent.done or not agent.departed:
                 safe_action_list.append(action_list[i])
@@ -669,11 +700,32 @@ class World(object):
             other_action_list = [action_list[j] for j in range(len(action_list)) if j != i and (not self.agents[j].done and self.agents[j].departed)]
             ego_waypoint = waypoint_list[i]
             other_waypoint_list = [waypoint_list[j] for j in range(len(waypoint_list)) if j != i and (not self.agents[j].done and self.agents[j].departed)]
-            safe_ego_action, filtered_flag, deconflicting_agent_index = self.agent_safety_handle_list[i].apply_safety_filter(ego_state, ego_action, ego_waypoint, other_state_list, other_action_list, other_waypoint_list)
+            packet_age_matrix = getattr(self, "packet_age_matrix", None)
+            if packet_age_matrix is None:
+                other_packet_age_list = [0.0 for _ in other_state_agent_index_list]
+            else:
+                other_packet_age_list = [float(packet_age_matrix[agent.id, j]) for j in other_state_agent_index_list]
+            for packet_age in other_packet_age_list:
+                rho = self.vmax_uncertainty * max(packet_age, 0.0)
+                rho_values.append(rho)
+                lcb_margin_values.append(self.lcb_lipschitz_const * rho)
+            safe_ego_action, filtered_flag, deconflicting_agent_index = self.agent_safety_handle_list[i].apply_safety_filter(
+                ego_state, ego_action, ego_waypoint, other_state_list, other_action_list, other_waypoint_list, other_packet_age_list
+            )
             filtered_flag_list.append(filtered_flag)
             safe_action_list.append(safe_ego_action)
             deconflicting_agent_index_list.append(other_state_agent_index_list[deconflicting_agent_index])
 
+        if len(rho_values) > 0:
+            self.safety_filter_rho_mean_step = float(np.mean(rho_values))
+            self.safety_filter_rho_max_step = float(np.max(rho_values))
+            self.safety_filter_lcb_margin_mean_step = float(np.mean(lcb_margin_values))
+            self.safety_filter_lcb_margin_max_step = float(np.max(lcb_margin_values))
+        else:
+            self.safety_filter_rho_mean_step = 0.0
+            self.safety_filter_rho_max_step = 0.0
+            self.safety_filter_lcb_margin_mean_step = 0.0
+            self.safety_filter_lcb_margin_max_step = 0.0
         return safe_action_list, filtered_flag_list, deconflicting_agent_index_list
 
     # integrate physical state

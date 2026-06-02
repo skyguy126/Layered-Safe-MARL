@@ -671,6 +671,12 @@ class GMPERunner(Runner):
 		max_packet_age_overall = 0.0
 		packet_loss_count_total = 0
 		packet_transmission_count_total = 0
+		rho_sum = 0.0
+		rho_max = 0.0
+		lcb_margin_sum = 0.0
+		lcb_margin_max = 0.0
+		rho_count = 0
+		episode_has_collided_by_t_sum_after_warmup = np.zeros(episode_len, dtype=np.float64)
 		warmup_steps = max(0, int(getattr(self.all_args, "warmup_steps", 0)))
 
 		# Set up video writer
@@ -854,6 +860,15 @@ class GMPERunner(Runner):
 					avg_packet_age_sum[step] += avg_packet_age_step
 					packet_loss_count_total += getattr(world, "packet_loss_count_step", 0)
 					packet_transmission_count_total += getattr(world, "packet_transmission_count_step", 0)
+					rho_step_mean = float(getattr(world, "safety_filter_rho_mean_step", 0.0))
+					rho_step_max = float(getattr(world, "safety_filter_rho_max_step", 0.0))
+					lcb_margin_step_mean = float(getattr(world, "safety_filter_lcb_margin_mean_step", 0.0))
+					lcb_margin_step_max = float(getattr(world, "safety_filter_lcb_margin_max_step", 0.0))
+					rho_sum += rho_step_mean
+					lcb_margin_sum += lcb_margin_step_mean
+					rho_max = max(rho_max, rho_step_max)
+					lcb_margin_max = max(lcb_margin_max, lcb_margin_step_max)
+					rho_count += 1
 				if step == 0:
 					position_headers = ["step"]
 					for i in range(self.num_agents):
@@ -946,6 +961,8 @@ class GMPERunner(Runner):
 			safety_log_file.close()
 			min_distance_log_file.close()
 			episode_has_collided_by_t_sum += episode_has_collided_by_t
+			if warmup_steps < episode_len:
+				episode_has_collided_by_t_sum_after_warmup[warmup_steps:] += episode_has_collided_by_t[warmup_steps:]
 
 			env_infos = self.process_infos(infos)
 
@@ -1028,6 +1045,13 @@ class GMPERunner(Runner):
 		avg_uncertainty_radius = self.all_args.vmax_uncertainty * avg_packet_age
 		post_warmup_packet_age = avg_packet_age[warmup_steps:] if warmup_steps < episode_len else avg_packet_age
 		average_packet_age = float(np.mean(post_warmup_packet_age)) if post_warmup_packet_age.size > 0 else 0.0
+		average_rho = rho_sum / max(rho_count, 1)
+		average_lcb_margin = lcb_margin_sum / max(rho_count, 1)
+		if warmup_steps < episode_len:
+			cumulative_collision_pct_after_warmup = 100.0 * episode_has_collided_by_t_sum_after_warmup / max(num_eval_episodes, 1)
+			conflict_percentage_after_warmup = float(cumulative_collision_pct_after_warmup[-1])
+		else:
+			conflict_percentage_after_warmup = float(cumulative_collision_pct[-1])
 		measured_effective_packet_loss = (
 			packet_loss_count_total / max(packet_transmission_count_total, 1)
 		)
@@ -1060,6 +1084,9 @@ class GMPERunner(Runner):
 						+ '_safety_' + str(self.all_args.use_safety_filter) \
 						+ '_world_size' + str(self.all_args.world_size) + '_seed' + str(self.all_args.seed) + '.csv'
 		packet_eval_summary = {
+			"safety_filter_uncertainty_mode": getattr(self.all_args, "safety_filter_uncertainty_mode", "nominal"),
+			"fixed_lcb_margin": getattr(self.all_args, "fixed_lcb_margin", 0.0),
+			"lcb_lipschitz_const": getattr(self.all_args, "lcb_lipschitz_const", 1.0),
 			"warmup_steps": warmup_steps,
 			"packet_loss_prob": self.all_args.packet_loss_prob,
 			"packet_loss_burst_len": getattr(self.all_args, "packet_loss_burst_len", 1),
@@ -1067,10 +1094,16 @@ class GMPERunner(Runner):
 			"measured_effective_packet_loss": measured_effective_packet_loss,
 			"average_packet_age": average_packet_age,
 			"max_packet_age": max_packet_age_overall,
+			"average_rho": average_rho,
+			"max_rho": rho_max,
+			"average_lcb_margin": average_lcb_margin,
+			"max_lcb_margin": lcb_margin_max,
 			"conflict_percentage": average_stats.get("conflict_percentage", 0.0),
+			"conflict_percentage_after_warmup": conflict_percentage_after_warmup,
 			"min_distance_mean": average_stats.get("min_distance_mean", 0.0),
 			"min_distance_min": min((ep_info.get("min_distance_min", np.inf) for ep_info in ep_info_list), default=0.0),
 			"done_percentage": average_stats.get("done_percentage", 0.0),
+			"num_reached_goal_mean": average_stats.get("num_reached_goal_mean", 0.0),
 			"multiple_engagement_percentage": average_stats.get("multiple_engagement_percentage", 0.0),
 		}
 		with open(packet_eval_summary_file_name, mode='w', newline='', encoding='utf-8') as packet_eval_summary_file:
@@ -1081,6 +1114,7 @@ class GMPERunner(Runner):
 			packet_eval_summary_writer.writeheader()
 			packet_eval_summary_writer.writerow(packet_eval_summary)
 		print(f"Packet uncertainty eval summary saved to {packet_eval_summary_file_name}")
+		print("Packet uncertainty eval summary metrics:", packet_eval_summary)
 
 		print("Average Stats over Episodes:", average_stats)
 		eval_log_file.close()

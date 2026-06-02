@@ -134,6 +134,30 @@ class DoubleIntegratorDynamics(ControlAndDisturbanceAffineDynamics):
 class SafetyFilterIndividualHandle:
     def __init__(self):
         pass
+
+    @staticmethod
+    def compute_lcb_adjusted_value(
+        b_nominal: float,
+        packet_age: float,
+        uncertainty_mode: str,
+        fixed_lcb_margin: float,
+        lcb_lipschitz_const: float,
+        vmax_uncertainty: float,
+    ) -> float:
+        """
+        The nominal CBVF value B_nominal assumes the observed neighbor state is accurate.
+        Under packet loss, the observed state may be stale.
+        We use a lower-confidence bound:
+            B_lcb = B_nominal - L_B * rho(delta_t)
+        where rho(delta_t) = vmax_uncertainty * packet_age.
+        This makes the existing safety filter more conservative when communication is stale.
+        """
+        if uncertainty_mode == "fixed_lcb":
+            return b_nominal - fixed_lcb_margin
+        if uncertainty_mode == "lipschitz_lcb":
+            rho = vmax_uncertainty * max(float(packet_age), 0.0)
+            return b_nominal - lcb_lipschitz_const * rho
+        return b_nominal
     
     def apply_safety_filter(self, 
                             ego_state: np.ndarray,
@@ -174,7 +198,11 @@ class HjDataHandle:
         self.separation_distance = target_separation_distance
 
 class KinematicVehicleSafetyHandle(SafetyFilterIndividualHandle):
-    def __init__(self, config_class: AirTaxiConfig, hj_data_handle: HjDataHandle):
+    def __init__(self, config_class: AirTaxiConfig, hj_data_handle: HjDataHandle,
+                 safety_filter_uncertainty_mode: str = "nominal",
+                 fixed_lcb_margin: float = 0.0,
+                 lcb_lipschitz_const: float = 1.0,
+                 vmax_uncertainty: float = 1.0):
         super(KinematicVehicleSafetyHandle, self).__init__()
         self.coordination_range = config_class.COORDINATION_RANGE
         self.v_min = config_class.V_MIN
@@ -188,6 +216,10 @@ class KinematicVehicleSafetyHandle(SafetyFilterIndividualHandle):
         self.hj_dynamics = Air4dCooperativeDynamics(config_class)
         self.cbf_rate = config_class.CBF_RATE
         self.num_relative_state = 5
+        self.safety_filter_uncertainty_mode = safety_filter_uncertainty_mode
+        self.fixed_lcb_margin = fixed_lcb_margin
+        self.lcb_lipschitz_const = lcb_lipschitz_const
+        self.vmax_uncertainty = vmax_uncertainty
             
     def get_value_of_relative_state(self, ego_state, other_state):
         relative_state = self.get_relative_state(ego_state, other_state)
@@ -203,7 +235,7 @@ class KinematicVehicleSafetyHandle(SafetyFilterIndividualHandle):
     def apply_safety_filter(self, ego_state: np.ndarray, ego_action: np.ndarray,
                             ego_waypoint: np.ndarray,
                             other_state_list: List, other_action_list: List,
-                            other_waypoint_list: List):
+                            other_waypoint_list: List, other_packet_age_list: List = None):
         """ pseudo code:
             1. evaluate relative distances with other vehicles.
             2. Pick the other vehicle that is the minimum distance.
@@ -212,11 +244,21 @@ class KinematicVehicleSafetyHandle(SafetyFilterIndividualHandle):
         relative_distances = []
         relative_values = []
         relative_states_in_hj_range = []
-        for other_state in other_state_list:
+        if other_packet_age_list is None:
+            other_packet_age_list = [0.0 for _ in other_state_list]
+        for idx, other_state in enumerate(other_state_list):
             relative_distance = self.get_relative_distance(ego_state, other_state)
             relative_distances.append(relative_distance)
-            relative_value, state_in_hj_range = self.get_value_of_relative_state(ego_state, other_state)
-            relative_values.append(relative_value)
+            relative_value_nominal, state_in_hj_range = self.get_value_of_relative_state(ego_state, other_state)
+            relative_value_used = self.compute_lcb_adjusted_value(
+                b_nominal=relative_value_nominal,
+                packet_age=other_packet_age_list[idx],
+                uncertainty_mode=self.safety_filter_uncertainty_mode,
+                fixed_lcb_margin=self.fixed_lcb_margin,
+                lcb_lipschitz_const=self.lcb_lipschitz_const,
+                vmax_uncertainty=self.vmax_uncertainty,
+            )
+            relative_values.append(relative_value_used)
             relative_states_in_hj_range.append(state_in_hj_range)
         min_agent_index_by_distance = np.argmin(relative_distances)
         # min_agent_index = np.argmin(relative_distances)
@@ -308,7 +350,11 @@ class KinematicVehicleSafetyHandle(SafetyFilterIndividualHandle):
         return u_sol    
 
 class DoubleIntegratorSafetyHandle(SafetyFilterIndividualHandle):
-    def __init__(self, hj_data_handle: HjDataHandle):
+    def __init__(self, hj_data_handle: HjDataHandle,
+                 safety_filter_uncertainty_mode: str = "nominal",
+                 fixed_lcb_margin: float = 0.0,
+                 lcb_lipschitz_const: float = 1.0,
+                 vmax_uncertainty: float = 1.0):
         super(DoubleIntegratorSafetyHandle, self).__init__()
         self.coordination_range = DoubleIntegratorConfig.COORDINATION_RANGE
         self.vx_min = DoubleIntegratorConfig.VX_MIN
@@ -324,6 +370,10 @@ class DoubleIntegratorSafetyHandle(SafetyFilterIndividualHandle):
         self.hj_dynamics = DoubleIntegratorDynamics(vx_min=self.vx_min, vx_max=self.vx_max, vy_min=self.vy_min, vy_max=self.vy_max, accelx_min=self.accelx_min, accelx_max=self.accelx_max, accely_min=self.accely_min, accely_max=self.accely_max)
         self.cbf_rate = DoubleIntegratorConfig.CBF_RATE # function to generaliz
         self.num_relative_state = 4
+        self.safety_filter_uncertainty_mode = safety_filter_uncertainty_mode
+        self.fixed_lcb_margin = fixed_lcb_margin
+        self.lcb_lipschitz_const = lcb_lipschitz_const
+        self.vmax_uncertainty = vmax_uncertainty
 
     def clip_ctrl_with_valid_control_bound(self, state, u_sol):
         """ note that clipping is applied to each vehicle state and control input
@@ -378,7 +428,7 @@ class DoubleIntegratorSafetyHandle(SafetyFilterIndividualHandle):
     def apply_safety_filter(self, ego_state: np.ndarray, ego_action: np.ndarray,
                             ego_waypoint: np.ndarray,
                             other_state_list: List, other_action_list: List,
-                            other_waypoint_list: List):
+                            other_waypoint_list: List, other_packet_age_list: List = None):
         """ pseudo code:
             1. evaluate relative distances with other vehicles.
             2. Pick the other vehicle that is the minimum distance.
@@ -387,11 +437,21 @@ class DoubleIntegratorSafetyHandle(SafetyFilterIndividualHandle):
         relative_distances = []
         relative_values = []
         relative_states_in_hj_range = []
-        for other_state in other_state_list:
+        if other_packet_age_list is None:
+            other_packet_age_list = [0.0 for _ in other_state_list]
+        for idx, other_state in enumerate(other_state_list):
             relative_distance = self.get_relative_distance(ego_state, other_state)
             relative_distances.append(relative_distance)
-            relative_value, state_in_hj_range = self.get_value_of_relative_state(ego_state, other_state)
-            relative_values.append(relative_value)
+            relative_value_nominal, state_in_hj_range = self.get_value_of_relative_state(ego_state, other_state)
+            relative_value_used = self.compute_lcb_adjusted_value(
+                b_nominal=relative_value_nominal,
+                packet_age=other_packet_age_list[idx],
+                uncertainty_mode=self.safety_filter_uncertainty_mode,
+                fixed_lcb_margin=self.fixed_lcb_margin,
+                lcb_lipschitz_const=self.lcb_lipschitz_const,
+                vmax_uncertainty=self.vmax_uncertainty,
+            )
+            relative_values.append(relative_value_used)
             relative_states_in_hj_range.append(state_in_hj_range)
         min_agent_index_by_distance = np.argmin(relative_distances)
         # min_agent_index = np.argmin(relative_distances)
