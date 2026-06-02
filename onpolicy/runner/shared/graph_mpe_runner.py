@@ -713,6 +713,7 @@ class GMPERunner(Runner):
 		num_total_episode = int(self.all_args.num_env_steps) // self.all_args.episode_length // self.all_args.n_rollout_threads
 		obs, agent_id, node_obs, adj, _ = envs.reset(num_total_episode-1)
 		ep_info_list = []
+		accumulated_stats = defaultdict(float)
 		for episode in range(self.all_args.render_episodes):
 			position_log_file_name = str(self.gif_dir) + '/log_position_' + scenario_name + '_num_agent' + str(self.all_args.num_agents) \
 							+ '_landmark' + str(self.all_args.num_landmarks) \
@@ -996,6 +997,12 @@ class GMPERunner(Runner):
 			# ep_info returns stat of the previous episode.
 			print("Episode summary: ", ep_info)
 			ep_info_list.append(ep_info[0])
+			for key, value in ep_info[0].items():
+				accumulated_stats[key] += value
+			running_average_stats = {
+				key: accumulated_stats[key] / len(ep_info_list) for key in accumulated_stats
+			}
+			print(f"Running average after episode {episode + 1}/{self.all_args.render_episodes}: {running_average_stats}")
 			if episode == 0:
 				headers = ep_info[0].keys()
 				writer = csv.DictWriter(eval_log_file, fieldnames=headers)
@@ -1003,13 +1010,10 @@ class GMPERunner(Runner):
 			writer.writerow(ep_info[0])
 
 		# evaluate means in ep_info_list, it is a list of dictionary of same keys
-		# Initialize a dictionary to accumulate sums
-		accumulated_stats = defaultdict(float)
-
-		for ep_info in ep_info_list:
-			for key, value in ep_info.items():
-				accumulated_stats[key] += value
-		average_stats = {key: accumulated_stats[key] / len(ep_info_list) for key in accumulated_stats}
+		average_stats = {
+			key: accumulated_stats[key] / max(len(ep_info_list), 1)
+			for key in accumulated_stats
+		}
 
 		# print("Success rates", success_rates_arr)
 		# Convert boolean array to integers
@@ -1118,3 +1122,9 @@ class GMPERunner(Runner):
 
 		print("Average Stats over Episodes:", average_stats)
 		eval_log_file.close()
+		return {
+			"average_stats": average_stats,
+			"packet_eval_summary": packet_eval_summary,
+			"episode_stats": ep_info_list,
+			"scenario_name": scenario_name,
+		}

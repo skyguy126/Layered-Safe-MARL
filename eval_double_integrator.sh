@@ -17,7 +17,7 @@ num_obstacles=1
 num_walls=0
 
 # --- Evaluation run ---
-num_eval_episodes=10
+num_eval_episodes=1
 num_eval_agents=6
 eval_episode_length=500
 seed=0
@@ -45,6 +45,8 @@ lcb_lipschitz_const=1.0
 # --- Rendering (set flag to empty string to disable) ---
 save_gif_flag="--save_gifs"
 use_render_flag="--use_render"
+# Optional JSON report output (set empty to disable)
+stats_json_output="test.json"
 
 # Sanity check: last line of config.py should match the custom scenario in use
 config_file="multiagent/config.py"
@@ -78,5 +80,6 @@ python scripts/eval_mpe.py \
   --safety_filter_uncertainty_mode="${safety_filter_uncertainty_mode}" \
   --fixed_lcb_margin="${fixed_lcb_margin}" \
   --lcb_lipschitz_const="${lcb_lipschitz_const}" \
+  ${stats_json_output:+--stats_json_output="${stats_json_output}"} \
   ${save_gif_flag} \
   ${use_render_flag}

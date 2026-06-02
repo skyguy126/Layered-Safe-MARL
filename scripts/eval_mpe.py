@@ -4,6 +4,7 @@ from distutils.util import strtobool
 import sys
 import os
 from typing import Dict
+import json
 import wandb
 import numpy as np
 from pathlib import Path
@@ -78,6 +79,8 @@ def parse_args(args, parser):
                         help="Constant margin subtracted from nominal safety value in fixed_lcb mode.")
     parser.add_argument("--lcb_lipschitz_const", type=float, default=1.0,
                         help="Lipschitz constant L_B used in lipschitz_lcb mode.")
+    parser.add_argument("--stats_json_output", type=str, default="",
+                        help="Optional JSON output path for aggregated eval metrics.")
 
     all_args = parser.parse_known_args(args)[0]
 
@@ -189,7 +192,65 @@ def main(args):
     runner = Runner(config)
     # actor_state_dict = torch.load(str(model_dir) + '/actor.pt')
     # runner.policy.actor.load_state_dict(actor_state_dict)
-    runner.render(False)
+    render_metrics = runner.render(False)
+
+    if isinstance(render_metrics, dict):
+        average_stats = render_metrics.get("average_stats", {})
+        print_box("Final running averages across all episodes")
+        for key in sorted(average_stats.keys()):
+            print(f"{key}: {average_stats[key]}")
+
+        if all_args.stats_json_output:
+            from multiagent.config import eval_scenario_type
+
+            parameter_keys = [
+                "eval_scenario_type", "num_eval_episodes", "num_eval_agents",
+                "reported_episode_length", "num_landmarks", "seed", "world_size",
+                "num_walls", "episode_length", "save_gifs", "use_render",
+                "render_episodes", "model_dir", "scenario_name", "num_agents",
+                "num_obstacles", "collaborative", "use_dones", "use_safety_filter",
+                "dynamics_type", "num_internal_step", "packet_loss_prob",
+                "packet_loss_burst_len", "vmax_uncertainty", "enable_packet_uncertainty",
+                "warmup_steps", "safety_filter_uncertainty_mode", "fixed_lcb_margin",
+                "lcb_lipschitz_const", "algorithm_name", "env_name", "obs_type",
+                "max_speed", "collision_rew", "goal_rew", "min_dist_thresh",
+                "soft_filter_type", "num_prediction_step_eval"
+            ]
+            run_stat_keys = [
+                "safety_filter_uncertainty_mode", "fixed_lcb_margin", "lcb_lipschitz_const",
+                "warmup_steps", "packet_loss_prob", "packet_loss_burst_len",
+                "computed_burst_start_prob", "measured_effective_packet_loss",
+                "average_packet_age", "max_packet_age", "average_rho", "max_rho",
+                "average_lcb_margin", "max_lcb_margin", "conflict_percentage",
+                "conflict_percentage_after_warmup", "min_distance_mean", "min_distance_min",
+                "done_percentage", "num_reached_goal_mean", "multiple_engagement_percentage",
+            ]
+
+            packet_eval_summary = render_metrics.get("packet_eval_summary", {})
+            run_stats_source = dict(average_stats)
+            run_stats_source.update(packet_eval_summary)
+
+            report_parameters = {k: getattr(all_args, k, None) for k in parameter_keys if hasattr(all_args, k)}
+            report_parameters["eval_scenario_type"] = eval_scenario_type
+            report_parameters["num_eval_episodes"] = getattr(all_args, "render_episodes", None)
+            report_parameters["num_eval_agents"] = getattr(all_args, "num_agents", None)
+            report_parameters["reported_episode_length"] = getattr(all_args, "episode_length", None)
+
+            report_run_stats = {k: run_stats_source.get(k, None) for k in run_stat_keys}
+            report = {
+                "parameters": report_parameters,
+                "run_statistics": report_run_stats,
+                "average_episode_statistics": average_stats,
+                "episode_statistics": render_metrics.get("episode_stats", []),
+            }
+
+            output_path = Path(all_args.stats_json_output)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(output_path, "w", encoding="utf-8") as f:
+                json.dump(report, f, indent=2, sort_keys=True)
+            print(f"Wrote evaluation statistics JSON to {output_path}")
+    elif all_args.stats_json_output:
+        print("Warning: stats_json_output requested, but this runner does not return episode metrics.")
     
     # post process
     envs.close()
