@@ -34,9 +34,9 @@ use_safety_filter="True"
 
 # --- Packet uncertainty ---
 enable_packet_uncertainty="True"
-packet_loss_prob=0.1
+packet_loss_prob=0.1 # this is good
 vmax_uncertainty=1.0
-packet_loss_burst_len=5
+packet_loss_burst_len=20 # can also be 5 for more realistic results
 warmup_steps=25
 
 # --- Rendering (set flag to empty string to disable) ---
