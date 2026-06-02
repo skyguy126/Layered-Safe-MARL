@@ -671,6 +671,7 @@ class GMPERunner(Runner):
 		max_packet_age_overall = 0.0
 		packet_loss_count_total = 0
 		packet_transmission_count_total = 0
+		warmup_steps = max(0, int(getattr(self.all_args, "warmup_steps", 0)))
 
 		# Set up video writer
 		from multiagent.config import eval_scenario_type
@@ -844,13 +845,15 @@ class GMPERunner(Runner):
 					valid_ages = packet_age_matrix[~np.eye(self.num_agents, dtype=bool)]
 					avg_packet_age_step = float(np.mean(valid_ages)) if valid_ages.size > 0 else 0.0
 					max_packet_age_step = float(np.max(valid_ages)) if valid_ages.size > 0 else 0.0
-					max_packet_age_overall = max(max_packet_age_overall, max_packet_age_step)
 				else:
 					avg_packet_age_step = 0.0
-				avg_packet_age_sum[step] += avg_packet_age_step
+					max_packet_age_step = 0.0
 				world = envs.envs[0].world
-				packet_loss_count_total += getattr(world, "packet_loss_count_step", 0)
-				packet_transmission_count_total += getattr(world, "packet_transmission_count_step", 0)
+				if step >= warmup_steps:
+					max_packet_age_overall = max(max_packet_age_overall, max_packet_age_step)
+					avg_packet_age_sum[step] += avg_packet_age_step
+					packet_loss_count_total += getattr(world, "packet_loss_count_step", 0)
+					packet_transmission_count_total += getattr(world, "packet_transmission_count_step", 0)
 				if step == 0:
 					position_headers = ["step"]
 					for i in range(self.num_agents):
@@ -1023,7 +1026,8 @@ class GMPERunner(Runner):
 		cumulative_collision_pct = 100.0 * episode_has_collided_by_t_sum / max(num_eval_episodes, 1)
 		avg_packet_age = avg_packet_age_sum / max(num_eval_episodes, 1)
 		avg_uncertainty_radius = self.all_args.vmax_uncertainty * avg_packet_age
-		average_packet_age = float(np.mean(avg_packet_age))
+		post_warmup_packet_age = avg_packet_age[warmup_steps:] if warmup_steps < episode_len else avg_packet_age
+		average_packet_age = float(np.mean(post_warmup_packet_age)) if post_warmup_packet_age.size > 0 else 0.0
 		measured_effective_packet_loss = (
 			packet_loss_count_total / max(packet_transmission_count_total, 1)
 		)
@@ -1056,6 +1060,7 @@ class GMPERunner(Runner):
 						+ '_safety_' + str(self.all_args.use_safety_filter) \
 						+ '_world_size' + str(self.all_args.world_size) + '_seed' + str(self.all_args.seed) + '.csv'
 		packet_eval_summary = {
+			"warmup_steps": warmup_steps,
 			"packet_loss_prob": self.all_args.packet_loss_prob,
 			"packet_loss_burst_len": getattr(self.all_args, "packet_loss_burst_len", 1),
 			"computed_burst_start_prob": computed_burst_start_prob,

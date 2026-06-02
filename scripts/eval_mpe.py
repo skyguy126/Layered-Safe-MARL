@@ -69,6 +69,8 @@ def parse_args(args, parser):
     parser.add_argument("--enable_packet_uncertainty", type=lambda x: bool(strtobool(x)),
                         default=False,
                         help="If true, only neighbor observations use stale packet-based state.")
+    parser.add_argument("--warmup_steps", type=int, default=0,
+                        help="Timesteps after reset with perfect neighbor communication before packet loss.")
 
     all_args = parser.parse_known_args(args)[0]
 
@@ -83,7 +85,8 @@ def modify_args(model_dir:str,
                                 'scenario_name',
                                 'num_walls','zero_shift', 'use_safety_filter',
                                 'packet_loss_prob', 'packet_loss_burst_len',
-                                'vmax_uncertainty', 'enable_packet_uncertainty']):
+                                'vmax_uncertainty', 'enable_packet_uncertainty',
+                                'warmup_steps']):
     """
         Modify the args used to train the model
     """

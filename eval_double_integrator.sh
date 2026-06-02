@@ -18,8 +18,8 @@ num_walls=0
 
 # --- Evaluation run ---
 num_eval_episodes=10
-num_eval_agents=4
-eval_episode_length=250
+num_eval_agents=6
+eval_episode_length=500
 seed=0
 horizon=1
 
@@ -34,9 +34,10 @@ use_safety_filter="True"
 
 # --- Packet uncertainty ---
 enable_packet_uncertainty="True"
-packet_loss_prob=0.02
+packet_loss_prob=0.1
 vmax_uncertainty=1.0
-packet_loss_burst_len=15
+packet_loss_burst_len=5
+warmup_steps=25
 
 # --- Rendering (set flag to empty string to disable) ---
 save_gif_flag="--save_gifs"
@@ -70,5 +71,6 @@ python scripts/eval_mpe.py \
   --packet_loss_prob="${packet_loss_prob}" \
   --vmax_uncertainty="${vmax_uncertainty}" \
   --packet_loss_burst_len="${packet_loss_burst_len}" \
+  --warmup_steps="${warmup_steps}" \
   ${save_gif_flag} \
   ${use_render_flag}

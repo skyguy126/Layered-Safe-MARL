@@ -217,6 +217,7 @@ class SafeAamScenario(BaseScenario):
 		self.packet_loss_prob = getattr(args, "packet_loss_prob", 0.0)
 		self.vmax_uncertainty = getattr(args, "vmax_uncertainty", 1.0)
 		self.packet_loss_burst_len = max(1, int(getattr(args, "packet_loss_burst_len", 1)))
+		self.warmup_steps = max(0, int(getattr(args, "warmup_steps", 0)))
 		self.packet_loss_prob = float(np.clip(self.packet_loss_prob, 0.0, 1.0))
 		self.burst_start_prob = self._compute_burst_start_prob(
 			self.packet_loss_prob, self.packet_loss_burst_len)
@@ -370,6 +371,23 @@ class SafeAamScenario(BaseScenario):
 		world.observed_neighbor_state_values = {}
 		world.packet_loss_count_step = 0
 		world.packet_transmission_count_step = 0
+
+		if world.current_time_step < self.warmup_steps:
+			for ego in world.agents:
+				world.observed_neighbor_state_values[ego.id] = {}
+				for neighbor in world.agents:
+					if ego.id == neighbor.id:
+						continue
+					i, j = ego.id, neighbor.id
+					self.last_received_state[i][j] = deepcopy(neighbor.state)
+					self.packet_age[i, j] = 0.0
+					world.observed_neighbor_state_values[i][j] = self.last_received_state[i][j].values.copy()
+			self.remaining_burst_loss.fill(0)
+			world.packet_age_matrix = self.packet_age.copy()
+			valid_ages = self.packet_age[~np.eye(self.num_agents, dtype=bool)]
+			world.packet_age_mean = float(np.mean(valid_ages)) if valid_ages.size > 0 else 0.0
+			return
+
 		for ego in world.agents:
 			world.observed_neighbor_state_values[ego.id] = {}
 			for neighbor in world.agents:
