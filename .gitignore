@@ -187,3 +187,5 @@ dmypy.json
 .pyre/
 
 trained_models/
+old_scripts/
+old_result/
