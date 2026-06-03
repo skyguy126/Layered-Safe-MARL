@@ -1,6 +1,32 @@
 # Layered-Safe-MARL
 Multi-agent reinforcement learning for navigation with safety
 
+## Class Project
+
+**Authors:** Aryan Singh, Vamsi Eyunni
+
+**[Final Presentation Slides](https://docs.google.com/presentation/d/13mQREJgijm8WVHVarxFX8lKNnMYcjc-Yk9ITSgdmZmM/edit?slide=id.p#slide=id.p)**
+
+This fork extends the RSS 2025 Layered-Safe-MARL codebase to study safety under imperfect multi-agent communication. During evaluation, we inject packet loss (random and burst) and neighbor velocity uncertainty, then compare how the safety filter performs under three uncertainty modes:
+
+| Mode | Description |
+|------|-------------|
+| **Nominal** | Baseline filter assuming perfect neighbor state |
+| **Fixed LCB** | Subtract a fixed margin from the safety value |
+| **Lipschitz LCB** | Scale uncertainty by communication delay via a Lipschitz bound |
+
+**Key additions** (see recent commits on this branch):
+
+- Packet loss and communication uncertainty simulation at eval time
+- LCB-adjusted safety filter in `multiagent/safety_filter.py`
+- Obstacle support in navigation scenarios
+- Stress-test eval scripts in `result_scripts/` (`a.sh`–`j.sh`) with JSON results in `result/`
+- Pretrained double-integrator models in `trained_models/`
+
+Run a sweep with e.g. `bash result_scripts/h.sh`.
+
+---
+
 Project webpage is [here](https://dinamo-mit.github.io/Layered-Safe-MARL/).
 
 Paper:
