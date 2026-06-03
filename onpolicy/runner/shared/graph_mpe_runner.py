@@ -14,6 +14,17 @@ from collections import defaultdict
 def _t2n(x):
 	return x.detach().cpu().numpy()
 
+def _open_mp4_writer(file_path, fps, frame_size):
+	"""Open an MP4 writer, trying codecs until one works on this system."""
+	width, height = frame_size
+	for codec in ("mp4v", "avc1", "XVID"):
+		fourcc = cv2.VideoWriter_fourcc(*codec)
+		writer = cv2.VideoWriter(file_path, fourcc, fps, (width, height))
+		if writer.isOpened():
+			return writer
+		writer.release()
+	raise RuntimeError(f"Could not open VideoWriter for {file_path}")
+
 class GMPERunner(Runner):
 	"""
 		Runner class to perform training, evaluation and data 
@@ -690,16 +701,19 @@ class GMPERunner(Runner):
 			put_label_in_video = True
 		else:
 			put_label_in_video = False
+		video_writer = None
+		gif_writer = None
 		if not get_metrics and self.all_args.save_gifs:
-			file_name = '/'+ scenario_name + '_num_agent' + str(self.all_args.num_agents) \
+			file_stem = '/' + scenario_name + '_num_agent' + str(self.all_args.num_agents) \
 						+ '_landmark' + str(self.all_args.num_landmarks) \
 						+ '_safety_' + str(self.all_args.use_safety_filter) \
-						+ '_world_size' + str(self.all_args.world_size) + '_seed' + str(self.all_args.seed) + '.mp4'
-			file_path = str(self.gif_dir) + file_name
-			frame_shape = envs.render('rgb_array')[0][0].shape[:2]  # Get height and width
-			fps = int(1 / self.all_args.ifi)
-			fourcc = cv2.VideoWriter_fourcc(*'avc1')  # Codec for MP4
-			video_writer = cv2.VideoWriter(file_path, fourcc, fps, (frame_shape[1], frame_shape[0]))
+						+ '_world_size' + str(self.all_args.world_size) + '_seed' + str(self.all_args.seed)
+			mp4_path = str(self.gif_dir) + file_stem + '.mp4'
+			gif_path = str(self.gif_dir) + file_stem + '.gif'
+			frame_shape = envs.render('rgb_array')[0][0].shape[:2]  # height, width
+			fps = max(1, int(1 / self.all_args.ifi))
+			video_writer = _open_mp4_writer(mp4_path, fps, (frame_shape[1], frame_shape[0]))
+			gif_writer = imageio.get_writer(gif_path, mode='I', duration=self.all_args.ifi, loop=0)
 		eval_log_file_name = str(self.gif_dir) + '/eval_log_' + scenario_name + '_num_agent' + str(self.all_args.num_agents) \
 						+ '_landmark' + str(self.all_args.num_landmarks) \
 						+ '_safety_' + str(self.all_args.use_safety_filter) \
@@ -937,7 +951,10 @@ class GMPERunner(Runner):
 							text_color = (255, 100, 100) if num_agents_safety_violated > 0 else (255, 255, 255)
 							_put_label(image, f"Vehicle Near Collision:  {num_agents_safety_violated} / {self.num_agents}", label_x_pos, label_y_pos + 4 * label_y_offset + 11, color=text_color)
 
-						video_writer.write(cv2.cvtColor(image, cv2.COLOR_RGB2BGR))  # Convert RGB to BGR for OpenCV
+						if gif_writer is not None:
+							gif_writer.append_data(image)
+						if video_writer is not None:
+							video_writer.write(cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
 						calc_end = time.time()
 						elapsed = calc_end - calc_start
 						if elapsed < self.all_args.ifi:
@@ -1041,8 +1058,12 @@ class GMPERunner(Runner):
 		# rewards_mean = np.mean(rewards_arr)
 		
 		if not get_metrics and self.all_args.save_gifs:
-			video_writer.release()
-			print(f"Video saved to {file_path}")
+			if gif_writer is not None:
+				gif_writer.close()
+				print(f"GIF saved to {gif_path}")
+			if video_writer is not None:
+				video_writer.release()
+				print(f"Video saved to {mp4_path}")
 
 		cumulative_collision_pct = 100.0 * episode_has_collided_by_t_sum / max(num_eval_episodes, 1)
 		avg_packet_age = avg_packet_age_sum / max(num_eval_episodes, 1)
