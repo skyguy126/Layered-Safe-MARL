@@ -370,7 +370,7 @@ def get_config():
                         help="number of episodes of a single evaluation.")
 
     # render parameters
-    parser.add_argument("--save_gifs", action='store_true', default=True, 
+    parser.add_argument("--save_gifs", action='store_true', default=False, 
                         help="by default, do not save render video. If set, save video.")
     parser.add_argument("--use_render", action='store_true', default=False, 
                         help="by default, do not render the env during training. " 

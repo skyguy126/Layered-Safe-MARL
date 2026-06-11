@@ -1,3 +1,5 @@
+import os
+import subprocess
 import time
 import numpy as np
 from numpy import ndarray as arr
@@ -24,6 +26,35 @@ def _open_mp4_writer(file_path, fps, frame_size):
 			return writer
 		writer.release()
 	raise RuntimeError(f"Could not open VideoWriter for {file_path}")
+
+def _mp4_to_gif(mp4_path, gif_path, fps):
+	"""Convert a saved MP4 to GIF without buffering all frames in Python memory."""
+	palette_path = f"{gif_path}.palette.png"
+	try:
+		subprocess.run(
+			[
+				"ffmpeg", "-y", "-i", mp4_path,
+				"-vf", f"fps={fps},palettegen",
+				palette_path,
+			],
+			check=True,
+			capture_output=True,
+		)
+		subprocess.run(
+			[
+				"ffmpeg", "-y", "-i", mp4_path, "-i", palette_path,
+				"-lavfi", f"fps={fps}[x];[x][1:v]paletteuse",
+				gif_path,
+			],
+			check=True,
+			capture_output=True,
+		)
+	except subprocess.CalledProcessError as exc:
+		stderr = exc.stderr.decode("utf-8", errors="replace") if exc.stderr else ""
+		raise RuntimeError(f"ffmpeg failed to convert {mp4_path} to {gif_path}: {stderr}") from exc
+	finally:
+		if os.path.exists(palette_path):
+			os.remove(palette_path)
 
 class GMPERunner(Runner):
 	"""
@@ -702,7 +733,9 @@ class GMPERunner(Runner):
 		else:
 			put_label_in_video = False
 		video_writer = None
-		gif_writer = None
+		mp4_path = None
+		gif_path = None
+		fps = None
 		if not get_metrics and self.all_args.save_gifs:
 			file_stem = '/' + scenario_name + '_num_agent' + str(self.all_args.num_agents) \
 						+ '_landmark' + str(self.all_args.num_landmarks) \
@@ -713,7 +746,6 @@ class GMPERunner(Runner):
 			frame_shape = envs.render('rgb_array')[0][0].shape[:2]  # height, width
 			fps = max(1, int(1 / self.all_args.ifi))
 			video_writer = _open_mp4_writer(mp4_path, fps, (frame_shape[1], frame_shape[0]))
-			gif_writer = imageio.get_writer(gif_path, mode='I', duration=self.all_args.ifi, loop=0)
 		eval_log_file_name = str(self.gif_dir) + '/eval_log_' + scenario_name + '_num_agent' + str(self.all_args.num_agents) \
 						+ '_landmark' + str(self.all_args.num_landmarks) \
 						+ '_safety_' + str(self.all_args.use_safety_filter) \
@@ -951,8 +983,6 @@ class GMPERunner(Runner):
 							text_color = (255, 100, 100) if num_agents_safety_violated > 0 else (255, 255, 255)
 							_put_label(image, f"Vehicle Near Collision:  {num_agents_safety_violated} / {self.num_agents}", label_x_pos, label_y_pos + 4 * label_y_offset + 11, color=text_color)
 
-						if gif_writer is not None:
-							gif_writer.append_data(image)
 						if video_writer is not None:
 							video_writer.write(cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
 						calc_end = time.time()
@@ -1058,12 +1088,12 @@ class GMPERunner(Runner):
 		# rewards_mean = np.mean(rewards_arr)
 		
 		if not get_metrics and self.all_args.save_gifs:
-			if gif_writer is not None:
-				gif_writer.close()
-				print(f"GIF saved to {gif_path}")
 			if video_writer is not None:
 				video_writer.release()
 				print(f"Video saved to {mp4_path}")
+			if mp4_path is not None and gif_path is not None and fps is not None:
+				_mp4_to_gif(mp4_path, gif_path, fps)
+				print(f"GIF saved to {gif_path}")
 
 		cumulative_collision_pct = 100.0 * episode_has_collided_by_t_sum / max(num_eval_episodes, 1)
 		avg_packet_age = avg_packet_age_sum / max(num_eval_episodes, 1)
