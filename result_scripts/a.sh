@@ -33,7 +33,7 @@ collaborative="False"
 use_safety_filter="False"
 
 # --- Packet uncertainty ---
-enable_packet_uncertainty="False"
+enable_packet_uncertainty="True"
 packet_loss_prob=0.1
 vmax_uncertainty=1.0
 packet_loss_burst_len=20
