@@ -879,6 +879,9 @@ class MultiAgentGraphEnv(MultiAgentBaseEnv):
 		self.prev_episode_min_distance_mean = 0.0
 		self.prev_episode_min_distance_min = 0.0
 		self.prev_episode_multiple_engagement_percentage = 0.0 # percentage between 0 and 1
+		self.prev_episode_average_task_value_start = 0.0
+		self.prev_episode_average_task_value_end = 0.0
+		self.prev_episode_average_task_value_decrease_per_step = 0.0
 
 		# travel metric
 		self.episode_agent_travel_length_list = None
@@ -888,6 +891,9 @@ class MultiAgentGraphEnv(MultiAgentBaseEnv):
 		self.episode_agent_conflict_occurance_list = None
 		self.episode_agent_in_multiple_engagement_list = None
 		self.episode_agent_min_distance_list = None
+		self.episode_task_value_start = None
+		self.episode_task_value_end = None
+		self.episode_task_value_step_count = 0
 		self.init_episode_agent_info()
 
 		self.set_graph_obs_space()
@@ -909,6 +915,30 @@ class MultiAgentGraphEnv(MultiAgentBaseEnv):
 		self.prev_episode_min_distance_min = np.min(self.episode_agent_min_distance_list)
 		if self.prev_episode_min_distance_min == np.inf:
 			self.prev_episode_min_distance_min = self.coordination_range
+		if self.episode_task_value_start is not None and self.episode_task_value_end is not None:
+			self.prev_episode_average_task_value_start = float(self.episode_task_value_start)
+			self.prev_episode_average_task_value_end = float(self.episode_task_value_end)
+			if self.episode_task_value_step_count > 0:
+				self.prev_episode_average_task_value_decrease_per_step = float(
+					(self.episode_task_value_start - self.episode_task_value_end) / self.episode_task_value_step_count
+				)
+			else:
+				self.prev_episode_average_task_value_decrease_per_step = 0.0
+		else:
+			self.prev_episode_average_task_value_start = 0.0
+			self.prev_episode_average_task_value_end = 0.0
+			self.prev_episode_average_task_value_decrease_per_step = 0.0
+
+	def _update_episode_task_value_metrics(self) -> None:
+		if not getattr(self.world, "use_task_value_guidance", False):
+			return
+		if not self.world.step_task_values:
+			return
+		step_mean = float(np.mean(self.world.step_task_values))
+		if self.episode_task_value_start is None:
+			self.episode_task_value_start = step_mean
+		self.episode_task_value_end = step_mean
+		self.episode_task_value_step_count += 1
 
 	def init_episode_agent_info(self) -> None:
 		if self.episode_agent_travel_length_list is not None:
@@ -924,6 +954,9 @@ class MultiAgentGraphEnv(MultiAgentBaseEnv):
 		self.episode_agent_conflict_occurance_list = np.zeros(len(self.world.agents))
 		self.episode_agent_min_distance_list = np.inf * np.ones(len(self.world.agents))
 		self.episode_agent_in_multiple_engagement_list = np.zeros(len(self.world.agents))
+		self.episode_task_value_start = None
+		self.episode_task_value_end = None
+		self.episode_task_value_step_count = 0
 
 	def set_graph_obs_space(self):
 		self.node_observation_space = []
@@ -975,6 +1008,7 @@ class MultiAgentGraphEnv(MultiAgentBaseEnv):
 		# advance world state
 		# print("Self.horizon",horizon)
 		self.world.step()
+		self._update_episode_task_value_metrics()
 		# record observation for each agent
 		for (i, agent) in enumerate(self.agents):
 			obs_n.append(self._get_obs(agent))
@@ -1071,6 +1105,9 @@ class MultiAgentGraphEnv(MultiAgentBaseEnv):
 		env_info['min_distance_mean'] = self.prev_episode_min_distance_mean
 		env_info['min_distance_min'] = self.prev_episode_min_distance_min
 		env_info['multiple_engagement_percentage'] = self.prev_episode_multiple_engagement_percentage
+		env_info['average_task_value_start'] = self.prev_episode_average_task_value_start
+		env_info['average_task_value_end'] = self.prev_episode_average_task_value_end
+		env_info['average_task_value_decrease_per_step'] = self.prev_episode_average_task_value_decrease_per_step
 		return obs_n, agent_id_n, node_obs_n, adj_n, env_info
 	
 	def _get_graph_obs(self, agent:Agent):

@@ -219,6 +219,9 @@ class SafeAamScenario(BaseScenario):
 			fixed_lcb_margin=self.fixed_lcb_margin,
 			lcb_lipschitz_const=self.lcb_lipschitz_const,
 			vmax_uncertainty=self.vmax_uncertainty,
+			use_task_value_guidance=getattr(args, "use_task_value_guidance", False),
+			task_value_weight=float(getattr(args, "task_value_weight", 0.1)),
+			task_value_grid_path=getattr(args, "task_value_grid_path", None),
 		)
 		# graph related attributes
 		world.graph_mode = True
@@ -1121,12 +1124,23 @@ class SafeAamScenario(BaseScenario):
 		
 		return node_obs, adj
 
+	def _update_agent_goal_positions(self, world:World) -> None:
+		if not getattr(world, "use_task_value_guidance", False):
+			return
+		if not hasattr(self, "reached_goal"):
+			return
+		world.agent_goal_positions = [
+			self.get_agent_current_goal(agent, world).state.p_pos.copy()
+			for agent in world.agents
+		]
+
 	def update_graph(self, world:World):
 		"""
 			Construct a graph from the cached distances.
 			Nodes are entities in the environment
 			Edges are constructed by thresholding distances
 		"""
+		self._update_agent_goal_positions(world)
 		self._update_packet_uncertainty(world)
 		dists = world.cached_dist_mag
 		# just connect the ones which are within connection 

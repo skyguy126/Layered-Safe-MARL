@@ -81,6 +81,13 @@ def parse_args(args, parser):
                         help="Lipschitz constant L_B used in lipschitz_lcb mode.")
     parser.add_argument("--stats_json_output", type=str, default="",
                         help="Optional JSON output path for aggregated eval metrics.")
+    parser.add_argument("--use_task_value_guidance", type=lambda x: bool(strtobool(x)),
+                        default=False,
+                        help="Bias safe discrete actions toward offline task cost-to-go.")
+    parser.add_argument("--task_value_weight", type=float, default=0.1,
+                        help="Weight on offline task value when ranking safe actions.")
+    parser.add_argument("--task_value_grid_path", type=str, default=None,
+                        help="Path to precomputed task value grid (.npy).")
 
     all_args = parser.parse_known_args(args)[0]
 
@@ -97,7 +104,9 @@ def modify_args(model_dir:str,
                                 'packet_loss_prob', 'packet_loss_burst_len',
                                 'vmax_uncertainty', 'enable_packet_uncertainty',
                                 'warmup_steps', 'safety_filter_uncertainty_mode',
-                                'fixed_lcb_margin', 'lcb_lipschitz_const']):
+                                'fixed_lcb_margin', 'lcb_lipschitz_const',
+                                'use_task_value_guidance', 'task_value_weight',
+                                'task_value_grid_path']):
     """
         Modify the args used to train the model
     """
@@ -212,7 +221,8 @@ def main(args):
                 "dynamics_type", "num_internal_step", "packet_loss_prob",
                 "packet_loss_burst_len", "vmax_uncertainty", "enable_packet_uncertainty",
                 "warmup_steps", "safety_filter_uncertainty_mode", "fixed_lcb_margin",
-                "lcb_lipschitz_const", "algorithm_name", "env_name", "obs_type",
+                "lcb_lipschitz_const", "use_task_value_guidance", "task_value_weight",
+                "task_value_grid_path", "algorithm_name", "env_name", "obs_type",
                 "max_speed", "collision_rew", "goal_rew", "min_dist_thresh",
                 "soft_filter_type", "num_prediction_step_eval"
             ]
@@ -224,6 +234,9 @@ def main(args):
                 "average_lcb_margin", "max_lcb_margin", "conflict_percentage",
                 "conflict_percentage_after_warmup", "min_distance_mean", "min_distance_min",
                 "done_percentage", "num_reached_goal_mean", "multiple_engagement_percentage",
+                "use_task_value_guidance", "task_value_weight", "average_task_value_start",
+                "average_task_value_end", "average_task_value_decrease_per_step",
+                "travel_time_mean", "travel_distance_mean",
             ]
 
             packet_eval_summary = render_metrics.get("packet_eval_summary", {})

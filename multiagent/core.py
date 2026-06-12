@@ -7,6 +7,12 @@ from scipy.integrate import solve_ivp
 
 from multiagent.safety_filter import KinematicVehicleSafetyHandle, DoubleIntegratorSafetyHandle, HjDataHandle
 from multiagent.config import DoubleIntegratorConfig, AirTaxiConfig
+from multiagent.task_value_grid import (
+    DEFAULT_TASK_VALUE_GRID_PATH,
+    TaskValueGridHandle,
+    get_double_integrator_discrete_actions,
+    predict_double_integrator_next_position,
+)
 from copy import deepcopy
 # function to check for team or single agent scenarios
 def is_list_of_lists(lst):
@@ -362,7 +368,10 @@ class World(object):
                  safety_filter_uncertainty_mode: str = "nominal",
                  fixed_lcb_margin: float = 0.0,
                  lcb_lipschitz_const: float = 1.0,
-                 vmax_uncertainty: float = 1.0):
+                 vmax_uncertainty: float = 1.0,
+                 use_task_value_guidance: bool = False,
+                 task_value_weight: float = 0.1,
+                 task_value_grid_path: str = None):
 
         assert dynamics_type in EntityDynamicsType, "Invalid dynamics type"
         self.dynamics_type = dynamics_type
@@ -436,6 +445,15 @@ class World(object):
         self.safety_filter_rho_max_step = 0.0
         self.safety_filter_lcb_margin_mean_step = 0.0
         self.safety_filter_lcb_margin_max_step = 0.0
+        # Offline task cost-to-go guidance (separate from CBVF/LCB safety table).
+        self.use_task_value_guidance = use_task_value_guidance
+        self.task_value_weight = task_value_weight
+        self.task_value_handle = None
+        self.agent_goal_positions = []
+        self.step_task_values = []
+        if self.use_task_value_guidance:
+            grid_path = task_value_grid_path or DEFAULT_TASK_VALUE_GRID_PATH
+            self.task_value_handle = TaskValueGridHandle(grid_path)
             
         self.agent_safety_handle_list = []
         self.hj_data_handle = self._init_hj_handle(self.dynamics_type, self.separation_distance) if use_hj_handle else None
@@ -674,6 +692,88 @@ class World(object):
        
         return action_list
 
+    def _select_action_with_task_value_guidance(
+        self,
+        agent_index: int,
+        ego_state: np.ndarray,
+        policy_action: np.ndarray,
+        ego_waypoint: np.ndarray,
+        other_state_list: List,
+        other_action_list: List,
+        other_waypoint_list: List,
+        other_packet_age_list: List,
+        other_state_agent_index_list: List,
+    ):
+        """Rank discrete candidate actions by task value among CBVF/LCB-safe choices."""
+        safety_handle = self.agent_safety_handle_list[agent_index]
+        goal_pos = self.agent_goal_positions[agent_index]
+        discrete_actions = get_double_integrator_discrete_actions()
+        safe_candidates = []
+        candidate_objectives = []
+
+        for candidate_action in discrete_actions:
+            if other_state_list:
+                _, filtered_flag, _ = safety_handle.apply_safety_filter(
+                    ego_state,
+                    candidate_action,
+                    ego_waypoint,
+                    other_state_list,
+                    other_action_list,
+                    other_waypoint_list,
+                    other_packet_age_list,
+                )
+                if filtered_flag:
+                    continue
+            p_next = predict_double_integrator_next_position(ego_state, candidate_action, self.dt)
+            task_value = self.task_value_handle.lookup(p_next, goal_pos)
+            objective = float(np.sum((candidate_action - policy_action) ** 2) + self.task_value_weight * task_value)
+            safe_candidates.append(candidate_action)
+            candidate_objectives.append(objective)
+
+        if safe_candidates:
+            best_idx = int(np.argmin(candidate_objectives))
+            chosen_action = safe_candidates[best_idx]
+            if other_state_list:
+                _, _, deconflicting_agent_index = safety_handle.apply_safety_filter(
+                    ego_state,
+                    chosen_action,
+                    ego_waypoint,
+                    other_state_list,
+                    other_action_list,
+                    other_waypoint_list,
+                    other_packet_age_list,
+                )
+            else:
+                deconflicting_agent_index = -1
+            filtered_flag = float(np.linalg.norm(chosen_action - policy_action)) > 1e-4
+            return chosen_action, filtered_flag, deconflicting_agent_index
+
+        if not other_state_list:
+            return policy_action, False, -1
+
+        return safety_handle.apply_safety_filter(
+            ego_state,
+            policy_action,
+            ego_waypoint,
+            other_state_list,
+            other_action_list,
+            other_waypoint_list,
+            other_packet_age_list,
+        )
+
+    def _record_step_task_values(self):
+        self.step_task_values = []
+        if not self.use_task_value_guidance or self.task_value_handle is None:
+            return
+        for i, agent in enumerate(self.agents):
+            if agent.done or not agent.departed:
+                continue
+            if i >= len(self.agent_goal_positions) or self.agent_goal_positions[i] is None:
+                continue
+            self.step_task_values.append(
+                self.task_value_handle.lookup(agent.state.p_pos, self.agent_goal_positions[i])
+            )
+
     def apply_safety_filter(self, action_list: List, waypoint_list: List):
         """ return filtered_action_list and flag_list of whether the action is filtered or not.
         """
@@ -682,6 +782,12 @@ class World(object):
         deconflicting_agent_index_list = []
         rho_values = []
         lcb_margin_values = []
+        use_task_guidance = (
+            self.use_task_value_guidance
+            and self.task_value_handle is not None
+            and self.dynamics_type == EntityDynamicsType.DoubleIntegratorXY
+            and len(self.agent_goal_positions) == len(self.agents)
+        )
         for i, agent in enumerate(self.agents):
             if agent.done or not agent.departed:
                 safe_action_list.append(action_list[i])
@@ -691,15 +797,10 @@ class World(object):
                 continue
             ego_state = agent.state.values
             other_state_list, other_state_agent_index_list = self.get_other_agent_state_list(agent)
-            if not other_state_list:
-                safe_action_list.append(action_list[i])
-                filtered_flag_list.append(False)
-                deconflicting_agent_index_list.append(-1)
-                continue
             ego_action = action_list[i]
             other_action_list = [action_list[j] for j in range(len(action_list)) if j != i and (not self.agents[j].done and self.agents[j].departed)]
-            ego_waypoint = waypoint_list[i]
-            other_waypoint_list = [waypoint_list[j] for j in range(len(waypoint_list)) if j != i and (not self.agents[j].done and self.agents[j].departed)]
+            ego_waypoint = waypoint_list[i] if waypoint_list is not None else None
+            other_waypoint_list = [waypoint_list[j] for j in range(len(waypoint_list)) if j != i and (not self.agents[j].done and self.agents[j].departed)] if waypoint_list is not None else []
             packet_age_matrix = getattr(self, "packet_age_matrix", None)
             if packet_age_matrix is None:
                 other_packet_age_list = [0.0 for _ in other_state_agent_index_list]
@@ -709,12 +810,36 @@ class World(object):
                 rho = self.vmax_uncertainty * max(packet_age, 0.0)
                 rho_values.append(rho)
                 lcb_margin_values.append(self.lcb_lipschitz_const * rho)
-            safe_ego_action, filtered_flag, deconflicting_agent_index = self.agent_safety_handle_list[i].apply_safety_filter(
-                ego_state, ego_action, ego_waypoint, other_state_list, other_action_list, other_waypoint_list, other_packet_age_list
-            )
+
+            if use_task_guidance and self.agent_goal_positions[i] is not None:
+                safe_ego_action, filtered_flag, deconflicting_agent_index = self._select_action_with_task_value_guidance(
+                    i,
+                    ego_state,
+                    ego_action,
+                    ego_waypoint,
+                    other_state_list,
+                    other_action_list,
+                    other_waypoint_list,
+                    other_packet_age_list,
+                    other_state_agent_index_list,
+                )
+            elif not other_state_list:
+                safe_action_list.append(action_list[i])
+                filtered_flag_list.append(False)
+                deconflicting_agent_index_list.append(-1)
+                continue
+            else:
+                safe_ego_action, filtered_flag, deconflicting_agent_index = self.agent_safety_handle_list[i].apply_safety_filter(
+                    ego_state, ego_action, ego_waypoint, other_state_list, other_action_list, other_waypoint_list, other_packet_age_list
+                )
             filtered_flag_list.append(filtered_flag)
             safe_action_list.append(safe_ego_action)
-            deconflicting_agent_index_list.append(other_state_agent_index_list[deconflicting_agent_index])
+            if other_state_list:
+                deconflicting_agent_index_list.append(other_state_agent_index_list[deconflicting_agent_index])
+            else:
+                deconflicting_agent_index_list.append(-1)
+
+        self._record_step_task_values()
 
         if len(rho_values) > 0:
             self.safety_filter_rho_mean_step = float(np.mean(rho_values))

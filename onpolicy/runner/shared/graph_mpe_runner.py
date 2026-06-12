@@ -1160,6 +1160,13 @@ class GMPERunner(Runner):
 			"done_percentage": average_stats.get("done_percentage", 0.0),
 			"num_reached_goal_mean": average_stats.get("num_reached_goal_mean", 0.0),
 			"multiple_engagement_percentage": average_stats.get("multiple_engagement_percentage", 0.0),
+			"use_task_value_guidance": getattr(self.all_args, "use_task_value_guidance", False),
+			"task_value_weight": getattr(self.all_args, "task_value_weight", 0.1),
+			"average_task_value_start": average_stats.get("average_task_value_start", 0.0),
+			"average_task_value_end": average_stats.get("average_task_value_end", 0.0),
+			"average_task_value_decrease_per_step": average_stats.get("average_task_value_decrease_per_step", 0.0),
+			"travel_time_mean": average_stats.get("travel_time_mean", 0.0),
+			"travel_distance_mean": average_stats.get("travel_distance_mean", 0.0),
 		}
 		with open(packet_eval_summary_file_name, mode='w', newline='', encoding='utf-8') as packet_eval_summary_file:
 			packet_eval_summary_writer = csv.DictWriter(
