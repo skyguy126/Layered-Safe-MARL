@@ -189,3 +189,6 @@ dmypy.json
 trained_models/
 old_scripts/
 old_result/
+
+results_2_metadata/
+results_2/

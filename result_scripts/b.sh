@@ -17,7 +17,7 @@ num_obstacles=1
 num_walls=0
 
 # --- Evaluation run ---
-num_eval_episodes=30
+num_eval_episodes=100
 num_eval_agents=6
 eval_episode_length=500
 seed=0
@@ -43,8 +43,8 @@ fixed_lcb_margin=0.0
 lcb_lipschitz_const=1.0
 
 # --- Rendering (set flag to empty string to disable) ---
-save_gif_flag="--save_gifs"
-use_render_flag="--use_render"
+save_gif_flag=""
+use_render_flag=""
 # Optional JSON report output (set empty to disable)
 stats_json_output="nominal_pl01_bl20.json"
 
