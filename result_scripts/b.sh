@@ -17,7 +17,7 @@ num_obstacles=1
 num_walls=0
 
 # --- Evaluation run ---
-num_eval_episodes=100
+num_eval_episodes=500
 num_eval_agents=6
 eval_episode_length=500
 seed=0
